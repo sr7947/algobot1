@@ -401,13 +401,21 @@ class TelegramBot:
 
         data = query.data
         try:
-            if data.startswith("approve:"):
+            from telegram_bot.callback_codec import decode_callback_data
+            decoded = decode_callback_data(data)
+            action = decoded.action
+            # Stash decoded payload for handlers
+            context.bot_data["_decoded_callback"] = decoded
+            if action in ("approve", "half_size") and decoded.embedded:
+                # Self-contained trade buttons — single handler
                 await handle_approve(update, context, self.orchestrator)
-            elif data.startswith("reject:"):
+            elif action == "approve":
+                await handle_approve(update, context, self.orchestrator)
+            elif action == "reject":
                 await handle_reject(update, context, self.orchestrator)
-            elif data.startswith("half_size:"):
+            elif action == "half_size":
                 await handle_half_size(update, context, self.orchestrator)
-            elif data.startswith("block:"):
+            elif action == "block":
                 await handle_block_similar(update, context, self.orchestrator)
             else:
                 await query.answer("Unknown action.")

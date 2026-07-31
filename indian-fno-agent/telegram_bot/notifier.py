@@ -114,21 +114,48 @@ class TelegramNotifier:
             return None
 
     @staticmethod
-    def _trade_card_keyboard(signal_id: str) -> InlineKeyboardMarkup:
+    def _trade_card_keyboard(signal_id: str, signal: TradeSignal | None = None) -> InlineKeyboardMarkup:
         """
         Build the four-button inline keyboard for a trade proposal card.
 
-        Callback data format: '<action>:<signal_id>'
+        Primary callback embeds trade params so Approve works even if the
+        in-memory signal store is empty (fits Telegram's 64-byte limit):
+            ax:BTCUSD:BUY:65200:63500:68600:1:25
+        Legacy fallback still accepted by handlers: approve:<uuid>
         """
+        if signal is not None:
+            lev = (signal.indicators_snapshot or {}).get("leverage") or 25
+            # Compact self-contained payload (must stay ≤ 64 bytes)
+            payload = (
+                f"{signal.symbol}:{signal.direction}:"
+                f"{signal.entry_price:g}:{signal.stop_loss:g}:{signal.target:g}:"
+                f"{signal.quantity}:{float(lev):g}"
+            )
+            approve_data = f"ax:{payload}"
+            reject_data = f"rx:{signal_id}"
+            half_data = f"hx:{payload}"
+            block_data = f"bx:{signal_id}"
+            # Safety: Telegram rejects callback_data longer than 64 bytes
+            if len(approve_data.encode("utf-8")) > 64:
+                approve_data = f"approve:{signal_id}"
+                half_data = f"half_size:{signal_id}"
+                reject_data = f"reject:{signal_id}"
+                block_data = f"block:{signal_id}"
+        else:
+            approve_data = f"approve:{signal_id}"
+            reject_data = f"reject:{signal_id}"
+            half_data = f"half_size:{signal_id}"
+            block_data = f"block:{signal_id}"
+
         return InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton("✅ APPROVE",    callback_data=f"approve:{signal_id}"),
-                    InlineKeyboardButton("❌ REJECT",     callback_data=f"reject:{signal_id}"),
+                    InlineKeyboardButton("✅ APPROVE", callback_data=approve_data),
+                    InlineKeyboardButton("❌ REJECT", callback_data=reject_data),
                 ],
                 [
-                    InlineKeyboardButton("💹 HALF SIZE",  callback_data=f"half_size:{signal_id}"),
-                    InlineKeyboardButton("🚫 BLOCK TODAY", callback_data=f"block:{signal_id}"),
+                    InlineKeyboardButton("💹 HALF SIZE", callback_data=half_data),
+                    InlineKeyboardButton("🚫 BLOCK TODAY", callback_data=block_data),
                 ],
             ]
         )
@@ -270,7 +297,7 @@ class TelegramNotifier:
             f"{'\\=' * 30}"
         )
 
-        keyboard = self._trade_card_keyboard(signal_id)
+        keyboard = self._trade_card_keyboard(signal_id, signal)
         # Register so a running TelegramBot can resolve Approve/Reject callbacks
         try:
             from telegram_bot.signal_store import register_signal

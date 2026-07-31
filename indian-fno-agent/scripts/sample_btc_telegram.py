@@ -100,6 +100,7 @@ async def _build_btc_signal():
 async def _handle_callback_query(bot, query: dict) -> None:
     """Process one Approve/Reject callback without PTB Application."""
     from telegram import InlineKeyboardMarkup
+    from telegram_bot.callback_codec import decode_callback_data, signal_from_embedded
     from telegram_bot.signal_store import get_signal, register_signal
     from core.enums import SignalStatus
     from api.paper_book import add_paper_position
@@ -118,12 +119,24 @@ async def _handle_callback_query(bot, query: dict) -> None:
         await bot.answer_callback_query(cq_id, text="⛔ Unauthorized.", show_alert=True)
         return
 
-    if ":" not in data:
+    try:
+        decoded = decode_callback_data(data)
+    except ValueError:
         await bot.answer_callback_query(cq_id, text="Unknown action.")
         return
 
-    action, signal_id = data.split(":", 1)
-    signal = get_signal(signal_id)
+    action = decoded.action
+    signal = None
+    signal_id = decoded.signal_id
+
+    if decoded.embedded:
+        signal = signal_from_embedded(decoded.embedded)
+        if action == "half_size":
+            signal = signal.model_copy(update={"quantity": max(1, signal.quantity // 2)})
+        signal_id = str(signal.id)
+    elif signal_id:
+        signal = get_signal(signal_id)
+
     if signal is None:
         await bot.answer_callback_query(
             cq_id,
@@ -144,7 +157,7 @@ async def _handle_callback_query(bot, query: dict) -> None:
         return
 
     status_val = str(getattr(signal, "status", "") or "")
-    if status_val in ("APPROVED", "REJECTED", "EXECUTED"):
+    if status_val in ("APPROVED", "REJECTED", "EXECUTED") and not decoded.embedded:
         await bot.answer_callback_query(cq_id, text=f"Already {status_val}.", show_alert=True)
         if chat_id and message_id:
             await bot.edit_message_text(
@@ -164,10 +177,6 @@ async def _handle_callback_query(bot, query: dict) -> None:
 
     if action in ("approve", "half_size"):
         qty = signal.quantity
-        if action == "half_size":
-            qty = max(1, qty // 2)
-            if hasattr(signal, "model_copy"):
-                signal = signal.model_copy(update={"quantity": qty})
         try:
             add_paper_position(signal)
             status_txt = (
@@ -309,6 +318,13 @@ async def main() -> None:
         raise SystemExit("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID must be set in .env")
 
     bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+    # Drop other getUpdates sessions, then wait — Telegram requires a pause after close()
+    try:
+        await bot.close()
+        logger.info("Called Bot.close() to drop other getUpdates sessions")
+        await asyncio.sleep(10)
+    except Exception as exc:
+        logger.warning("bot.close(): %s", exc)
     try:
         await bot.delete_webhook(drop_pending_updates=True)
     except Exception as exc:

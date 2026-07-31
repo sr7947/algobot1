@@ -7,6 +7,7 @@ dashboard/dist/
 # Dashboard / Node
 dashboard/node_modules/
 data/pending_telegram_signals.json
+data/paper_positions.json
 *.db
 develop-eggs/
 dist/

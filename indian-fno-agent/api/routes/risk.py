@@ -466,7 +466,8 @@ async def get_live_margins(
         return _MARGINS_CACHE[cache_key]
 
     if target_class == "FNO":
-        from api.routes.positions import ACTIVE_PAPER_POSITIONS
+        from api.routes.positions import ACTIVE_PAPER_POSITIONS, reload_paper_positions
+        reload_paper_positions()
         fno_positions = [p for p in ACTIVE_PAPER_POSITIONS if p.get("asset_class") == "FNO"]
         total_balance = 500000.00
         used_margin = sum(float(p.get("entry", 145.0)) * int(p.get("qty", 50)) * 0.2 for p in fno_positions)
@@ -487,7 +488,8 @@ async def get_live_margins(
     # IM = (IM%/100) × size × contract_value × price
     # IM% = max(100/leverage, product.initial_margin)
     # Available = Wallet − (Position Margin + Order Margin)
-    from api.routes.positions import ACTIVE_PAPER_POSITIONS
+    from api.routes.positions import ACTIVE_PAPER_POSITIONS, reload_paper_positions
+    reload_paper_positions()
     from risk.delta_margin import (
         available_balance,
         estimate_position_margin,

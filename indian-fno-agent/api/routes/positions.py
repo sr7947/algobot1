@@ -36,7 +36,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/positions", tags=["Positions"])
 
 # Re-export shared paper book so existing imports keep working
-from api.paper_book import ACTIVE_PAPER_POSITIONS, add_paper_position  # noqa: E402
+from api.paper_book import (  # noqa: E402
+    ACTIVE_PAPER_POSITIONS,
+    add_paper_position,
+    reload as reload_paper_positions,
+    save_paper_positions,
+)
 
 
 @router.post("/create-sample", status_code=status.HTTP_201_CREATED)
@@ -45,6 +50,7 @@ async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[
     payload = body or {}
     sym = str(payload.get("symbol", "BTCUSD")).upper()
     is_crypto = "BTC" in sym or "ETH" in sym or "CRYPTO" in str(payload.get("asset_class", "")).upper()
+    reload_paper_positions()
 
     if is_crypto:
         try:
@@ -110,6 +116,7 @@ async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[
         }
 
     ACTIVE_PAPER_POSITIONS.insert(0, pos)
+    save_paper_positions()
     return {"status": "success", "message": f"Position placed for {pos['symbol']}", "position": pos}
 
 
@@ -315,6 +322,9 @@ async def list_positions_raw(asset_class: Optional[str] = Query(None)) -> Dict[s
     import math
     from api.routes.market import is_nse_market_open
 
+    # Reload disk + approved Telegram signals so Positions sees fills from other local processes
+    reload_paper_positions()
+
     now = time.time()
     market_open = is_nse_market_open()
     updated_positions = []
@@ -424,6 +434,7 @@ COMPLETED_TRADES: List[Dict[str, Any]] = []
 async def close_position_simple(position_id: str) -> Dict[str, Any]:
     """Manually close an open paper position and record to completed trade history."""
     global ACTIVE_PAPER_POSITIONS, COMPLETED_TRADES
+    reload_paper_positions()
     closed_pos = None
     for p in ACTIVE_PAPER_POSITIONS:
         if str(p["id"]) == str(position_id):
@@ -436,6 +447,7 @@ async def close_position_simple(position_id: str) -> Dict[str, Any]:
     if closed_pos:
         if closed_pos in ACTIVE_PAPER_POSITIONS:
             ACTIVE_PAPER_POSITIONS.remove(closed_pos)
+        save_paper_positions()
 
         entry = float(closed_pos.get("entry", 145.0))
         current = float(closed_pos.get("current", entry))

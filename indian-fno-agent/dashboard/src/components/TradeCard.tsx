@@ -13,7 +13,7 @@ interface Signal {
   status: string;
   regime: string;
   reasons: string[];
-  news: string;
+  news?: string;
 }
 
 export default function TradeCard({ signal }: { signal: Signal }) {

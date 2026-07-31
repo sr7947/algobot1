@@ -17,7 +17,7 @@ interface SignalItem {
 
 export default function Dashboard() {
   const [positionsCount, setPositionsCount] = useState<number>(0);
-  const [signals, setSignals] = useState<SignalItem[]>([]);
+  const [signals] = useState<SignalItem[]>([]);
 
   const fetchDashboardData = async () => {
     try {

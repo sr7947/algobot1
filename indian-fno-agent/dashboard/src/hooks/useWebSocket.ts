@@ -9,7 +9,7 @@ export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttempts = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
-  const { setConnected, addSignal, setPositions, setDailyPnl } = useAppStore();
+  const { setConnected, addSignal, setPositions } = useAppStore();
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;

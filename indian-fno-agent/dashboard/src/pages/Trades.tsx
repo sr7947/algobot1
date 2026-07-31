@@ -1,4 +1,4 @@
-import { Download, History } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 const dailyPnl = [

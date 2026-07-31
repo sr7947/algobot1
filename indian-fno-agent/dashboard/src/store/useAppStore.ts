@@ -56,7 +56,7 @@ interface AppState {
   fetchRiskState: () => Promise<void>;
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
+export const useAppStore = create<AppState>((set) => ({
   signals: [],
   positions: [],
   dailyPnl: 0,

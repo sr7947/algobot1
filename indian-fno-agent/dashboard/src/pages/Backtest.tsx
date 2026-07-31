@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Play, Clock, TrendingUp, Award, BarChart2, ShieldAlert, ArrowUpRight, ArrowDownRight, RefreshCw } from 'lucide-react';
+import { Play, Clock, RefreshCw } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import axios from 'axios';
 import toast from 'react-hot-toast';

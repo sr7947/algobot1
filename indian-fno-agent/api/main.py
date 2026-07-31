@@ -36,23 +36,23 @@ async def lifespan(app: FastAPI):
     app.state.redis = None        # Redis client placeholder
     app.state.orchestrator = None  # TradingOrchestrator instance
 
-    # Instantiate Broker Adapter
+    # Instantiate Broker Adapter in background task
     try:
         from broker.base import BrokerFactory
         app.state.broker = BrokerFactory.create(settings.BROKER, settings)
-        await app.state.broker.login()
-        logger.info(f"Broker adapter '{settings.BROKER}' instantiated and connected successfully.")
+        asyncio.create_task(app.state.broker.login())
+        logger.info(f"Broker adapter '{settings.BROKER}' instantiated successfully.")
     except Exception as e:
         logger.error(f"Failed to instantiate broker '{settings.BROKER}': {e}")
         app.state.broker = None
 
-    # Initialize & start Telegram bot polling
+    # Initialize & start Telegram bot polling in background task
     try:
         from telegram_bot.bot import TelegramBot
         bot = TelegramBot()
         app.state.telegram_bot = bot
-        await bot.start()
-        logger.info("Telegram bot initialized and polling.")
+        asyncio.create_task(bot.start())
+        logger.info("Telegram bot initialized.")
     except Exception as e:
         logger.error(f"Failed to start Telegram bot: {e}")
         app.state.telegram_bot = None

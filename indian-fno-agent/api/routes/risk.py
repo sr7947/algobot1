@@ -14,12 +14,14 @@ GET    /risk/exposure     — current exposure by symbol and sector
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -441,6 +443,10 @@ async def get_exposure(
 # Route: GET /risk/margins — Live Real-Time Broker Margins
 # ─────────────────────────────────────────────────────────────────────────────
 
+_MARGINS_CACHE: Dict[str, Any] = {}
+_MARGINS_CACHE_TIME: float = 0.0
+
+
 @router.get(
     "/margins",
     summary="Real-time live account balances from active broker",
@@ -449,15 +455,22 @@ async def get_live_margins(
     request: Request,
     asset_class: Optional[str] = Query(None),
 ) -> Dict[str, Any]:
-    """Fetch live real-time wallet balances & margins segregated by asset class (FNO vs CRYPTO)."""
+    """Fetch live real-time wallet balances & margins segregated by asset class (FNO vs CRYPTO) with 10s caching."""
+    global _MARGINS_CACHE, _MARGINS_CACHE_TIME
+
     target_class = asset_class.upper() if asset_class else "FNO"
+    now = time.time()
+
+    cache_key = f"margin_{target_class}"
+    if cache_key in _MARGINS_CACHE and (now - _MARGINS_CACHE_TIME) < 10.0:
+        return _MARGINS_CACHE[cache_key]
 
     if target_class == "FNO":
         from api.routes.positions import ACTIVE_PAPER_POSITIONS
         fno_positions = [p for p in ACTIVE_PAPER_POSITIONS if p.get("asset_class") == "FNO"]
         total_balance = 500000.00
         used_margin = sum(float(p.get("entry", 145.0)) * int(p.get("qty", 50)) * 0.2 for p in fno_positions)
-        return {
+        res = {
             "status": "success",
             "asset_class": "FNO",
             "currency": "INR",
@@ -466,6 +479,9 @@ async def get_live_margins(
             "available_margin": round(total_balance - used_margin, 2),
             "used_margin": round(used_margin, 2),
         }
+        _MARGINS_CACHE[cache_key] = res
+        _MARGINS_CACHE_TIME = now
+        return res
 
     # CRYPTO Mode
     from api.routes.positions import ACTIVE_PAPER_POSITIONS
@@ -476,12 +492,12 @@ async def get_live_margins(
     broker = getattr(request.app.state, "broker", None)
     if broker and getattr(broker, "_authenticated", False):
         try:
-            m = await asyncio.wait_for(broker.get_margins(), timeout=1.5)
+            m = await asyncio.wait_for(broker.get_margins(), timeout=1.0)
             tot_bal = round(float(m.available_cash), 2)
         except Exception:
             pass
 
-    return {
+    res = {
         "status": "success",
         "asset_class": "CRYPTO",
         "currency": "USD",
@@ -490,4 +506,7 @@ async def get_live_margins(
         "available_margin": round(tot_bal - used_m, 2),
         "used_margin": round(used_m, 2),
     }
+    _MARGINS_CACHE[cache_key] = res
+    _MARGINS_CACHE_TIME = now
+    return res
 

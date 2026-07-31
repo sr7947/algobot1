@@ -56,9 +56,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 3000);
+    const interval = setInterval(fetchDashboardData, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [assetClass]);
 
   const isCrypto = assetClass === 'CRYPTO';
   const currencySymbol = isCrypto ? '$' : '₹';

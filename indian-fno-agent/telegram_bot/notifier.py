@@ -165,14 +165,31 @@ class TelegramNotifier:
         signal_id = str(signal.id)
         capital: float = float(agent_context.get("capital", 0) or 0)
         strategy_version: str = str(agent_context.get("strategy_version", "1.0"))
+        is_crypto = (
+            str(agent_context.get("asset_class", "")).upper() == "CRYPTO"
+            or str(signal.exchange).upper() == "DELTA"
+            or "BTC" in signal.symbol.upper()
+            or "ETH" in signal.symbol.upper()
+        )
+        currency = "$" if is_crypto else "₹"
+        leverage = agent_context.get("leverage") or (signal.indicators_snapshot or {}).get("leverage")
 
         # Compute derived values
-        lots = signal.quantity // signal.lot_size
+        lots = max(1, signal.quantity // max(1, signal.lot_size))
         confidence_pct = int(signal.confidence_score * 100)
         bar = format_confidence_bar(signal.confidence_score)
         risk_per_unit = abs(signal.entry_price - signal.stop_loss)
-        max_risk_inr = risk_per_unit * signal.quantity
-        max_risk_pct = (max_risk_inr / capital * 100) if capital > 0 else 0.0
+        # Crypto (vanilla): PnL/risk uses contract_value multiplier
+        if is_crypto:
+            try:
+                from risk.delta_margin import get_default_product_spec
+                cv = get_default_product_spec(signal.symbol).contract_value
+            except Exception:
+                cv = 0.001
+            max_risk_amt = risk_per_unit * signal.quantity * cv
+        else:
+            max_risk_amt = risk_per_unit * signal.quantity
+        max_risk_pct = (max_risk_amt / capital * 100) if capital > 0 else 0.0
 
         sl_pct = format_sl_pct(signal.entry_price, signal.stop_loss)
         tgt_pct = format_target_pct(signal.entry_price, signal.target)
@@ -207,16 +224,25 @@ class TelegramNotifier:
         version_esc = escape_md(strategy_version)
         regime_esc = escape_md(format_regime(str(signal.regime)))
         direction_esc = escape_md(format_direction(str(signal.direction)))
-        entry_esc = escape_md(f"₹{signal.entry_price:,.2f}")
-        sl_esc = escape_md(f"₹{signal.stop_loss:,.2f} ({sl_pct})")
-        tgt_esc = escape_md(f"₹{signal.target:,.2f} ({tgt_pct})")
-        qty_esc = escape_md(f"{signal.quantity} units ({lots} lot{'s' if lots != 1 else ''})")
+        entry_esc = escape_md(f"{currency}{signal.entry_price:,.2f}")
+        sl_esc = escape_md(f"{currency}{signal.stop_loss:,.2f} ({sl_pct})")
+        tgt_esc = escape_md(f"{currency}{signal.target:,.2f} ({tgt_pct})")
+        if is_crypto:
+            qty_esc = escape_md(f"{signal.quantity} contract{'s' if signal.quantity != 1 else ''}")
+        else:
+            qty_esc = escape_md(f"{signal.quantity} units ({lots} lot{'s' if lots != 1 else ''})")
         conf_esc = escape_md(f"{confidence_pct}% {bar}")
         rr_esc = escape_md(format_risk_reward(signal.risk_reward))
-        max_risk_esc = escape_md(
-            f"{format_currency(max_risk_inr)} ({max_risk_pct:.2f}% of capital)"
-        )
+        if is_crypto:
+            max_risk_esc = escape_md(f"${max_risk_amt:,.2f} ({max_risk_pct:.2f}% of wallet)")
+        else:
+            max_risk_esc = escape_md(
+                f"{format_currency(max_risk_amt)} ({max_risk_pct:.2f}% of capital)"
+            )
         expiry_esc = escape_md(format_time_ist(signal.expires_at))
+        leverage_line = ""
+        if is_crypto and leverage:
+            leverage_line = f"Leverage: *{escape_md(f'{float(leverage):.0f}x')}*\n"
 
         text = (
             f"🎯 *TRADE PROPOSAL {trade_id}*\n"
@@ -226,6 +252,7 @@ class TelegramNotifier:
             f"Market Regime: {regime_esc}\n"
             f"\n"
             f"Direction: *{direction_esc}*\n"
+            f"{leverage_line}"
             f"Entry: {entry_esc}\n"
             f"Stop Loss: {sl_esc}\n"
             f"Target: {tgt_esc}\n"

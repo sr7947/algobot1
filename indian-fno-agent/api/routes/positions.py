@@ -120,9 +120,8 @@ async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[
         entry = float(payload.get("entry", 65200.00))
         qty = int(payload.get("qty", 1))
         current = float(payload.get("current", 65420.00))
-        pnl = float(payload.get("pnl", current - entry))  # 1 contract × $1 move ≈ per-contract USD later
         spec = get_default_product_spec("BTCUSD")
-        # Vanilla PnL for display: size × contract_value × (mark − entry)
+        # Vanilla PnL: size × contract_value × (mark − entry)
         pnl = qty * spec.contract_value * (current - entry)
         margin = estimate_position_margin(size=qty, entry_price=entry, leverage=leverage, product=spec)
         pos = {

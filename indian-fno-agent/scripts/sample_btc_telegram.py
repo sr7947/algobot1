@@ -122,7 +122,12 @@ async def _handle_callback_query(bot, query: dict) -> None:
     try:
         decoded = decode_callback_data(data)
     except ValueError:
-        await bot.answer_callback_query(cq_id, text="Unknown action.")
+        await bot.answer_callback_query(
+            cq_id,
+            text=f"Unknown action ({(data or '')[:40]}). Update/restart the bot winning getUpdates.",
+            show_alert=True,
+        )
+        logger.warning("Unknown/invalid callback_data=%r", data)
         return
 
     action = decoded.action

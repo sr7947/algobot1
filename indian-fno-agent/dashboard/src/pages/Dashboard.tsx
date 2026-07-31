@@ -101,7 +101,9 @@ export default function Dashboard() {
             ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
             : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
         }`}>
-          {isCrypto ? 'Delta Testnet Crypto Mode ($100.00 USD Balance)' : 'Paper Trading Mode (₹5,00,000 Capital)'}
+          {isCrypto
+            ? `Delta Testnet Crypto Mode (${currencySymbol}${totalCapital.toLocaleString('en-IN', { minimumFractionDigits: 2 })} USD Balance)`
+            : `Paper Trading Mode (${currencySymbol}${totalCapital.toLocaleString('en-IN')} Capital)`}
         </span>
       </div>
 

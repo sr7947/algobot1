@@ -95,6 +95,7 @@ export default function Positions() {
                 <th className="text-left p-4">Symbol / Details</th>
                 <th className="text-center p-4">Direction</th>
                 <th className="text-right p-4">Qty</th>
+                {isCrypto && <th className="text-right p-4">Leverage</th>}
                 <th className="text-right p-4">Entry</th>
                 <th className="text-right p-4">Current Price</th>
                 <th className="text-right p-4">P&L ({isCrypto ? 'USD' : 'INR'})</th>
@@ -107,7 +108,7 @@ export default function Positions() {
             <tbody>
               {positions.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-gray-500 text-xs">
+                  <td colSpan={isCrypto ? 11 : 10} className="p-8 text-center text-gray-500 text-xs">
                     {isCrypto
                       ? 'No active Crypto open positions. Trades on Delta Exchange will appear here in real time.'
                       : 'No active Indian F&O open positions. Approved trades from Telegram will appear here in real time.'}
@@ -129,6 +130,11 @@ export default function Positions() {
                       </span>
                     </td>
                     <td className="p-4 text-right font-semibold">{pos.qty}</td>
+                    {isCrypto && (
+                      <td className="p-4 text-right text-yellow-400 font-medium">
+                        {(pos as { leverage?: number }).leverage ?? 25}x
+                      </td>
+                    )}
                     <td className="p-4 text-right text-gray-300">{currencySymbol}{pos.entry.toFixed(2)}</td>
                     <td className="p-4 text-right font-bold text-white">{currencySymbol}{pos.current.toFixed(2)}</td>
                     <td className={`p-4 text-right font-bold text-base ${pos.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>

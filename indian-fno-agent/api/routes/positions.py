@@ -53,7 +53,7 @@ def add_paper_position(signal: Any) -> Dict[str, Any]:
     is_crypto = "BTC" in symbol.upper() or "ETH" in symbol.upper() or exchange == "DELTA"
     asset_class = "CRYPTO" if is_crypto else "FNO"
 
-    pos = {
+    pos: Dict[str, Any] = {
         "id": pos_id,
         "symbol": symbol,
         "exchange": exchange,
@@ -70,6 +70,13 @@ def add_paper_position(signal: Any) -> Dict[str, Any]:
         "time": "Just now",
         "created_at": time.time(),
     }
+    if is_crypto:
+        try:
+            from config.settings import get_settings
+            default_leverage = float(get_settings().DELTA_DEFAULT_LEVERAGE)
+        except Exception:
+            default_leverage = 25.0
+        pos["leverage"] = float(getattr(signal, "leverage", default_leverage) or default_leverage)
     ACTIVE_PAPER_POSITIONS.insert(0, pos)
     return pos
 
@@ -82,6 +89,12 @@ async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[
     is_crypto = "BTC" in sym or "ETH" in sym or "CRYPTO" in str(payload.get("asset_class", "")).upper()
 
     if is_crypto:
+        try:
+            from config.settings import get_settings
+            default_leverage = float(get_settings().DELTA_DEFAULT_LEVERAGE)
+        except Exception:
+            default_leverage = 25.0
+        leverage = float(payload.get("leverage", default_leverage) or default_leverage)
         pos = {
             "id": f"btc-{int(time.time())}",
             "symbol": "BTCUSD",
@@ -90,6 +103,7 @@ async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[
             "expiry": "Perpetual",
             "direction": str(payload.get("direction", "BUY")),
             "qty": int(payload.get("qty", 1)),
+            "leverage": leverage,
             "entry": 65200.00,
             "current": 65420.00,
             "pnl": 220.00,

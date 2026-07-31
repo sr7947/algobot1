@@ -487,8 +487,23 @@ async def get_live_margins(
     from api.routes.positions import ACTIVE_PAPER_POSITIONS
     crypto_positions = [p for p in ACTIVE_PAPER_POSITIONS if p.get("asset_class") == "CRYPTO"]
 
-    # Delta Exchange contract multiplier: 1 contract = 0.001 BTC (~$65.20 notional). At 10x leverage = $6.52 initial margin.
-    used_m = sum(float(p.get("entry", 65200.0)) * int(p.get("qty", 1)) * 0.001 * 0.1 for p in crypto_positions)
+    # Delta Exchange: 1 contract = 0.001 BTC. Initial margin ≈ notional / leverage.
+    # Default leverage is 25x (configurable via DELTA_DEFAULT_LEVERAGE).
+    try:
+        from config.settings import get_settings
+        default_leverage = float(get_settings().DELTA_DEFAULT_LEVERAGE)
+    except Exception:
+        default_leverage = 25.0
+    default_leverage = max(1.0, default_leverage)
+    margin_fraction = 1.0 / default_leverage  # e.g. 25x → 4% of notional
+
+    used_m = sum(
+        float(p.get("entry", 65200.0))
+        * int(p.get("qty", 1))
+        * 0.001
+        * (1.0 / max(1.0, float(p.get("leverage", default_leverage))))
+        for p in crypto_positions
+    )
     tot_bal = 200.00
     avail_m = max(0.0, tot_bal - used_m)
 
@@ -510,6 +525,8 @@ async def get_live_margins(
         "total_balance": tot_bal,
         "available_margin": avail_m,
         "used_margin": round(used_m, 2),
+        "default_leverage": default_leverage,
+        "margin_fraction": round(margin_fraction, 6),
     }
     _MARGINS_CACHE[cache_key] = res
     _MARGINS_CACHE_TIME = now

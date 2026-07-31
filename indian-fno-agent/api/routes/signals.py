@@ -482,13 +482,16 @@ async def trigger_sample_signal(
     if bot:
         bot.register_signal(signal)
 
-    notifier = TelegramNotifier()
-    msg_id = await notifier.send_trade_card(signal, {"capital": 500000})
+    try:
+        import asyncio
+        notifier = TelegramNotifier()
+        asyncio.create_task(notifier.send_trade_card(signal, {"capital": 500000}))
+    except Exception as exc:
+        logger.warning("Could not dispatch Telegram card: %s", exc)
 
     return {
         "status": "success",
         "signal_id": str(signal.id),
         "symbol": sig_symbol,
-        "telegram_message_id": msg_id,
         "message": f"Sample trade signal for {sig_symbol} triggered and registered in bot memory!",
     }

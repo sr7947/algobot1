@@ -49,9 +49,15 @@ def add_paper_position(signal: Any) -> Dict[str, Any]:
     direction = str(getattr(signal, "direction", "BUY"))
     expiry = getattr(signal, "expiry_date", "04-AUG-2026")
 
+    exchange = str(getattr(signal, "exchange", "NFO")).upper()
+    is_crypto = "BTC" in symbol.upper() or "ETH" in symbol.upper() or exchange == "DELTA"
+    asset_class = "CRYPTO" if is_crypto else "FNO"
+
     pos = {
         "id": pos_id,
         "symbol": symbol,
+        "exchange": exchange,
+        "asset_class": asset_class,
         "expiry": expiry,
         "direction": direction,
         "qty": qty,
@@ -265,8 +271,8 @@ async def get_portfolio_summary(
 
 @router.get("")
 @router.get("/list-raw")
-async def list_positions_raw() -> Dict[str, Any]:
-    """Return raw list of open positions with NSE market hours price freeze."""
+async def list_positions_raw(asset_class: Optional[str] = Query(None)) -> Dict[str, Any]:
+    """Return raw list of open positions with asset_class filtering (FNO vs CRYPTO)."""
     import math
     from api.routes.market import is_nse_market_open
 
@@ -274,11 +280,19 @@ async def list_positions_raw() -> Dict[str, Any]:
     market_open = is_nse_market_open()
     updated_positions = []
 
+    target_class = asset_class.upper() if asset_class else None
+
     for pos in ACTIVE_PAPER_POSITIONS:
+        sym = pos.get("symbol", "").upper()
+        pos_class = pos.get("asset_class", "CRYPTO" if ("BTC" in sym or "ETH" in sym or pos.get("exchange") == "DELTA") else "FNO")
+
+        if target_class and pos_class != target_class:
+            continue
+
         entry = float(pos.get("entry", 145.0))
         qty = int(pos.get("qty", 50))
 
-        if market_open:
+        if pos_class == "CRYPTO" or market_open:
             elapsed = now - float(pos.get("created_at", now))
             fluctuated_diff = math.sin(elapsed / 3.0) * 6.5 + (elapsed * 0.12)
             current_price = round(max(5.0, entry + fluctuated_diff), 2)
@@ -289,10 +303,11 @@ async def list_positions_raw() -> Dict[str, Any]:
 
         pnl = round((current_price - entry) * qty, 2)
         p = dict(pos)
+        p["asset_class"] = pos_class
         p["current"] = current_price
         p["pnl"] = pnl
-        p["market_status"] = "OPEN" if market_open else "CLOSED"
-        p["time"] = "Market Closed (3:30 PM)" if not market_open else ("Just now" if (now - float(pos.get("created_at", now))) < 60 else f"{int((now - float(pos.get('created_at', now))) // 60)} min")
+        p["market_status"] = "OPEN 24/7" if pos_class == "CRYPTO" else ("OPEN" if market_open else "CLOSED")
+        p["time"] = ("Just now" if (now - float(pos.get("created_at", now))) < 60 else f"{int((now - float(pos.get('created_at', now))) // 60)} min")
         updated_positions.append(p)
 
     return {"status": "success", "market_status": "OPEN" if market_open else "CLOSED", "positions": updated_positions}

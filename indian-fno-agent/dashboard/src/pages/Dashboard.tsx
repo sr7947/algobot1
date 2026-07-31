@@ -35,8 +35,8 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     try {
       const [posRes, marginRes] = await Promise.all([
-        axios.get('/api/v1/positions'),
-        axios.get('/api/v1/risk/margins'),
+        axios.get(`/api/v1/positions?asset_class=${assetClass}`),
+        axios.get(`/api/v1/risk/margins?asset_class=${assetClass}`),
       ]);
       if (posRes.data && posRes.data.positions) {
         setPositionsCount(posRes.data.positions.length);

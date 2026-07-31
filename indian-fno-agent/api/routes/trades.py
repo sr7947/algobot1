@@ -429,6 +429,68 @@ async def export_trades(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+@router.get("/list-raw")
+async def list_trades_raw(asset_class: Optional[str] = Query(None)) -> Dict[str, Any]:
+    """Return raw list of closed trades from memory, filtered by asset_class (FNO vs CRYPTO)."""
+    from api.routes.positions import COMPLETED_TRADES
+
+    target_class = asset_class.upper() if asset_class else None
+    filtered = []
+
+    for t in COMPLETED_TRADES:
+        if target_class and t.get("asset_class", "FNO") != target_class:
+            continue
+        filtered.append(t)
+
+    return {"status": "success", "total": len(filtered), "trades": filtered}
+
+
+@router.get("/analytics-raw")
+async def get_trades_analytics_raw(asset_class: Optional[str] = Query(None)) -> Dict[str, Any]:
+    """Return aggregated analytics from memory for closed trades."""
+    from api.routes.positions import COMPLETED_TRADES
+
+    target_class = asset_class.upper() if asset_class else None
+    trades = [t for t in COMPLETED_TRADES if (not target_class or t.get("asset_class", "FNO") == target_class)]
+
+    total_trades = len(trades)
+    if total_trades == 0:
+        return {
+            "status": "success",
+            "total_trades": 0,
+            "win_rate": 0.0,
+            "total_pnl": 0.0,
+            "profit_factor": 0.0,
+            "avg_win": 0.0,
+            "avg_loss": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe_ratio": 0.0,
+        }
+
+    wins = [t for t in trades if t.get("net_pnl", 0.0) > 0]
+    losses = [t for t in trades if t.get("net_pnl", 0.0) < 0]
+
+    tot_pnl = round(sum(t.get("net_pnl", 0.0) for t in trades), 2)
+    win_rate = round(len(wins) / total_trades * 100, 1)
+    gp = sum(t.get("net_pnl", 0.0) for t in wins)
+    gl = abs(sum(t.get("net_pnl", 0.0) for t in losses))
+    pf = round(gp / gl, 2) if gl > 0 else (round(gp, 2) if gp > 0 else 0.0)
+    avg_w = round(gp / len(wins), 2) if wins else 0.0
+    avg_l = round(sum(t.get("net_pnl", 0.0) for t in losses) / len(losses), 2) if losses else 0.0
+
+    return {
+        "status": "success",
+        "total_trades": total_trades,
+        "win_rate": win_rate,
+        "total_pnl": tot_pnl,
+        "profit_factor": pf,
+        "avg_win": avg_w,
+        "avg_loss": avg_l,
+        "max_drawdown": 0.0,
+        "sharpe_ratio": 0.0,
+    }
+
+
 @router.get(
     "",
     response_model=TradeListResponse,

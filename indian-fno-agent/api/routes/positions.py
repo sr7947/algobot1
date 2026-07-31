@@ -402,19 +402,52 @@ async def get_position(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+COMPLETED_TRADES: List[Dict[str, Any]] = []
+
+
 @router.post("/{position_id}/close")
 async def close_position_simple(position_id: str) -> Dict[str, Any]:
-    """Manually close an open paper position."""
-    global ACTIVE_PAPER_POSITIONS
-    initial_count = len(ACTIVE_PAPER_POSITIONS)
-    ACTIVE_PAPER_POSITIONS = [p for p in ACTIVE_PAPER_POSITIONS if str(p["id"]) != str(position_id)]
+    """Manually close an open paper position and record to completed trade history."""
+    global ACTIVE_PAPER_POSITIONS, COMPLETED_TRADES
+    closed_pos = None
+    for p in ACTIVE_PAPER_POSITIONS:
+        if str(p["id"]) == str(position_id):
+            closed_pos = p
+            break
 
-    if len(ACTIVE_PAPER_POSITIONS) < initial_count:
-        return {"status": "success", "message": f"Position {position_id} closed successfully."}
+    if not closed_pos and ACTIVE_PAPER_POSITIONS:
+        closed_pos = ACTIVE_PAPER_POSITIONS[0]
 
-    if ACTIVE_PAPER_POSITIONS:
-        closed = ACTIVE_PAPER_POSITIONS.pop(0)
-        return {"status": "success", "message": f"Position {closed['symbol']} closed successfully."}
+    if closed_pos:
+        if closed_pos in ACTIVE_PAPER_POSITIONS:
+            ACTIVE_PAPER_POSITIONS.remove(closed_pos)
+
+        entry = float(closed_pos.get("entry", 145.0))
+        current = float(closed_pos.get("current", entry))
+        qty = int(closed_pos.get("qty", 1))
+        pnl = round((current - entry) * qty, 2)
+        asset_cls = closed_pos.get("asset_class", "FNO")
+
+        trade_record = {
+            "id": closed_pos["id"],
+            "symbol": closed_pos["symbol"],
+            "exchange": closed_pos.get("exchange", "NFO"),
+            "asset_class": asset_cls,
+            "direction": closed_pos.get("direction", "BUY"),
+            "qty": qty,
+            "entry": entry,
+            "exit": current,
+            "pnl": pnl,
+            "charges": 20.0 if asset_cls == "FNO" else 0.50,
+            "net_pnl": pnl,
+            "strategy": closed_pos.get("strategy", "Trend Breakout"),
+            "exit_reason": "MANUAL_CLOSE",
+            "entry_time": closed_pos.get("time", "Just now"),
+            "exit_time": "Just now",
+            "created_at": time.time(),
+        }
+        COMPLETED_TRADES.insert(0, trade_record)
+        return {"status": "success", "message": f"Position {closed_pos['symbol']} closed.", "trade": trade_record}
 
     return {"status": "success", "message": "Position closed."}
     repo = PositionRepository(db)

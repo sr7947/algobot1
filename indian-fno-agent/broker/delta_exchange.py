@@ -76,6 +76,7 @@ class DeltaExchangeBroker(IBrokerAdapter):
         self._products_cache: Dict[str, Dict[str, Any]] = {}
         self._product_id_map: Dict[str, int] = {}
         self._symbol_map: Dict[int, str] = {}
+        self._product_specs: Dict[str, Any] = {}
 
         self._client: Optional[httpx.AsyncClient] = None
 
@@ -264,8 +265,19 @@ class DeltaExchangeBroker(IBrokerAdapter):
             self._products_cache[symbol] = prod
             self._product_id_map[symbol] = prod_id
             self._symbol_map[prod_id] = symbol
+            try:
+                from risk.delta_margin import product_spec_from_dict
+                self._product_specs[symbol] = product_spec_from_dict(symbol, prod)
+            except Exception:
+                pass
 
         return instruments
+
+    def get_product_spec(self, symbol: str) -> Any:
+        """Return cached DeltaProductSpec for symbol (or baked-in default)."""
+        from risk.delta_margin import get_default_product_spec
+
+        return self._product_specs.get(symbol) or get_default_product_spec(symbol)
 
     async def get_ltp(self, tokens: List[str], exchange: Exchange = Exchange.NSE) -> Dict[str, float]:
         """Fetch live ticker prices for requested symbols."""
@@ -374,6 +386,57 @@ class DeltaExchangeBroker(IBrokerAdapter):
         )
 
     # ------------------------------------------------------------------
+    # Leverage
+    # ------------------------------------------------------------------
+
+    def _default_leverage(self) -> float:
+        """Return configured default order leverage (falls back to 25x)."""
+        try:
+            lev = float(getattr(self._settings, "DELTA_DEFAULT_LEVERAGE", 25.0) or 25.0)
+        except (TypeError, ValueError):
+            lev = 25.0
+        return max(1.0, lev)
+
+    async def set_leverage(
+        self,
+        product_id: int,
+        leverage: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Set order leverage for a product before placing new orders.
+
+        Maps to ``POST /v2/products/{product_id}/orders/leverage``.
+        Does not change margin on already-open positions.
+        """
+        lev = leverage if leverage is not None else self._default_leverage()
+        payload = {"leverage": str(lev)}
+        res = await self._request(
+            "POST",
+            f"/v2/products/{product_id}/orders/leverage",
+            payload=payload,
+            auth_required=True,
+        )
+        logger.info(
+            "Delta Exchange order leverage set to %sx for product_id=%s",
+            lev,
+            product_id,
+        )
+        return res.get("result", res)
+
+    async def get_leverage(self, product_id: int) -> float:
+        """Fetch current order leverage for a product."""
+        res = await self._request(
+            "GET",
+            f"/v2/products/{product_id}/orders/leverage",
+            auth_required=True,
+        )
+        result = res.get("result", {})
+        try:
+            return float(result.get("leverage", self._default_leverage()))
+        except (TypeError, ValueError):
+            return self._default_leverage()
+
+    # ------------------------------------------------------------------
     # Order Management
     # ------------------------------------------------------------------
 
@@ -382,6 +445,8 @@ class DeltaExchangeBroker(IBrokerAdapter):
         Place an order on Delta Exchange.
 
         Supports passing ``product_id`` or resolving product_id from ``symbol``.
+        Applies ``DELTA_DEFAULT_LEVERAGE`` (default 25x) before submission unless
+        the order already carries an explicit ``leverage`` attribute.
         """
         prod_id = getattr(order, "product_id", None) or self._product_id_map.get(order.symbol)
         if not prod_id:
@@ -390,6 +455,16 @@ class DeltaExchangeBroker(IBrokerAdapter):
 
         if not prod_id:
             raise OrderPlacementError(f"Unknown symbol / product_id for {order.symbol}", order_request=order)
+
+        order_leverage = getattr(order, "leverage", None)
+        try:
+            await self.set_leverage(int(prod_id), leverage=order_leverage)
+        except Exception as exc:
+            logger.warning(
+                "Failed to set Delta leverage before order (product_id=%s): %s — proceeding",
+                prod_id,
+                exc,
+            )
 
         order_type_map = {
             "MARKET": "market_order",

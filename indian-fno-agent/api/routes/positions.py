@@ -35,43 +35,45 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/positions", tags=["Positions"])
 
-ACTIVE_PAPER_POSITIONS: List[Dict[str, Any]] = []
+# Re-export shared paper book so existing imports keep working
+from api.paper_book import (  # noqa: E402
+    ACTIVE_PAPER_POSITIONS,
+    add_paper_position,
+    merge_seed,
+    reload as reload_paper_positions,
+    save_paper_positions,
+    upsert_paper_position_dict,
+)
 
 
-def add_paper_position(signal: Any) -> Dict[str, Any]:
-    """Helper to record an approved paper position with Expiry Date."""
-    pos_id = str(getattr(signal, "id", "pos-new"))
-    symbol = str(getattr(signal, "symbol", "NIFTY 24400 CE"))
-    qty = int(getattr(signal, "quantity", 50))
-    entry = float(getattr(signal, "entry_price", 145.0))
-    sl = float(getattr(signal, "stop_loss", 101.5))
-    target = float(getattr(signal, "target", 217.5))
-    direction = str(getattr(signal, "direction", "BUY"))
-    expiry = getattr(signal, "expiry_date", "04-AUG-2026")
+@router.post("/paper", status_code=status.HTTP_201_CREATED)
+async def upsert_paper_position(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Upsert a paper/Telegram fill into the live book (used by same-host sync)."""
+    if not body.get("id"):
+        raise HTTPException(status_code=400, detail="position id is required")
+    if not body.get("asset_class"):
+        sym = str(body.get("symbol", "")).upper()
+        body["asset_class"] = (
+            "CRYPTO" if ("BTC" in sym or "ETH" in sym or body.get("exchange") == "DELTA") else "FNO"
+        )
+    if "created_at" not in body:
+        body["created_at"] = time.time()
+    pos = upsert_paper_position_dict(body)
+    return {"status": "success", "position": pos}
 
-    exchange = str(getattr(signal, "exchange", "NFO")).upper()
-    is_crypto = "BTC" in symbol.upper() or "ETH" in symbol.upper() or exchange == "DELTA"
-    asset_class = "CRYPTO" if is_crypto else "FNO"
 
-    pos = {
-        "id": pos_id,
-        "symbol": symbol,
-        "exchange": exchange,
-        "asset_class": asset_class,
-        "expiry": expiry,
-        "direction": direction,
-        "qty": qty,
-        "entry": entry,
-        "current": entry,
-        "pnl": 0.0,
-        "sl": sl,
-        "target": target,
-        "trailingSl": entry,
-        "time": "Just now",
-        "created_at": time.time(),
+@router.post("/load-seed", status_code=status.HTTP_200_OK)
+async def load_seed_paper_positions() -> Dict[str, Any]:
+    """Merge checked-in seed paper fills (e.g. after git pull of an approved Telegram trade)."""
+    added = merge_seed(force=True)
+    reload_paper_positions()
+    crypto = [p for p in ACTIVE_PAPER_POSITIONS if p.get("asset_class") == "CRYPTO"]
+    return {
+        "status": "success",
+        "added": added,
+        "crypto_open": len(crypto),
+        "positions": crypto,
     }
-    ACTIVE_PAPER_POSITIONS.insert(0, pos)
-    return pos
 
 
 @router.post("/create-sample", status_code=status.HTTP_201_CREATED)
@@ -80,8 +82,29 @@ async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[
     payload = body or {}
     sym = str(payload.get("symbol", "BTCUSD")).upper()
     is_crypto = "BTC" in sym or "ETH" in sym or "CRYPTO" in str(payload.get("asset_class", "")).upper()
+    reload_paper_positions()
 
     if is_crypto:
+        try:
+            from config.settings import get_settings
+            default_leverage = float(get_settings().DELTA_DEFAULT_LEVERAGE)
+        except Exception:
+            default_leverage = 25.0
+        from risk.delta_margin import (
+            estimate_position_margin,
+            get_default_product_spec,
+            position_leverage,
+            position_notional,
+        )
+
+        leverage = float(payload.get("leverage", default_leverage) or default_leverage)
+        entry = float(payload.get("entry", 65200.00))
+        qty = int(payload.get("qty", 1))
+        current = float(payload.get("current", 65420.00))
+        spec = get_default_product_spec("BTCUSD")
+        # Vanilla PnL: size × contract_value × (mark − entry)
+        pnl = qty * spec.contract_value * (current - entry)
+        margin = estimate_position_margin(size=qty, entry_price=entry, leverage=leverage, product=spec)
         pos = {
             "id": f"btc-{int(time.time())}",
             "symbol": "BTCUSD",
@@ -89,13 +112,19 @@ async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[
             "asset_class": "CRYPTO",
             "expiry": "Perpetual",
             "direction": str(payload.get("direction", "BUY")),
-            "qty": int(payload.get("qty", 1)),
-            "entry": 65200.00,
-            "current": 65420.00,
-            "pnl": 220.00,
+            "qty": qty,
+            "leverage": leverage,
+            "margin": margin,
+            "notional": position_notional(qty, entry, spec),
+            "position_leverage": position_leverage(
+                qty, current, margin, unrealised_pnl=pnl, product=spec
+            ),
+            "entry": entry,
+            "current": current,
+            "pnl": round(pnl, 4),
             "sl": 63500.00,
             "target": 68600.00,
-            "trailingSl": 65200.00,
+            "trailingSl": entry,
             "time": "Just now",
             "created_at": time.time(),
         }
@@ -119,6 +148,7 @@ async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[
         }
 
     ACTIVE_PAPER_POSITIONS.insert(0, pos)
+    save_paper_positions()
     return {"status": "success", "message": f"Position placed for {pos['symbol']}", "position": pos}
 
 
@@ -324,6 +354,9 @@ async def list_positions_raw(asset_class: Optional[str] = Query(None)) -> Dict[s
     import math
     from api.routes.market import is_nse_market_open
 
+    # Reload disk + approved Telegram signals so Positions sees fills from other local processes
+    reload_paper_positions()
+
     now = time.time()
     market_open = is_nse_market_open()
     updated_positions = []
@@ -349,10 +382,34 @@ async def list_positions_raw(asset_class: Optional[str] = Query(None)) -> Dict[s
             # Market is closed (after 3:30 PM IST) — freeze at 3:30 PM closing level
             current_price = float(pos.get("frozen_price", pos.get("current", entry)))
 
-        pnl = round((current_price - entry) * qty, 2)
         p = dict(pos)
         p["asset_class"] = pos_class
         p["current"] = current_price
+
+        if pos_class == "CRYPTO":
+            from risk.delta_margin import (
+                estimate_position_margin,
+                get_default_product_spec,
+                position_leverage,
+                position_notional,
+            )
+
+            spec = get_default_product_spec(sym or "BTCUSD")
+            # Vanilla USD PnL: size × contract_value × (mark − entry)
+            direction = 1.0 if str(pos.get("direction", "BUY")).upper() in ("BUY", "LONG") else -1.0
+            pnl = round(direction * qty * spec.contract_value * (current_price - entry), 4)
+            lev = float(pos.get("leverage", 25.0) or 25.0)
+            margin = float(pos.get("margin") or estimate_position_margin(qty, entry, lev, product=spec))
+            p["margin"] = round(margin, 4)
+            p["notional"] = round(position_notional(qty, current_price, spec), 4)
+            p["leverage"] = lev
+            p["position_leverage"] = round(
+                position_leverage(qty, current_price, margin, unrealised_pnl=pnl, product=spec),
+                4,
+            )
+        else:
+            pnl = round((current_price - entry) * qty, 2)
+
         p["pnl"] = pnl
         p["market_status"] = "OPEN 24/7" if pos_class == "CRYPTO" else ("OPEN" if market_open else "CLOSED")
         p["time"] = ("Just now" if (now - float(pos.get("created_at", now))) < 60 else f"{int((now - float(pos.get('created_at', now))) // 60)} min")
@@ -409,6 +466,7 @@ COMPLETED_TRADES: List[Dict[str, Any]] = []
 async def close_position_simple(position_id: str) -> Dict[str, Any]:
     """Manually close an open paper position and record to completed trade history."""
     global ACTIVE_PAPER_POSITIONS, COMPLETED_TRADES
+    reload_paper_positions()
     closed_pos = None
     for p in ACTIVE_PAPER_POSITIONS:
         if str(p["id"]) == str(position_id):
@@ -421,6 +479,7 @@ async def close_position_simple(position_id: str) -> Dict[str, Any]:
     if closed_pos:
         if closed_pos in ACTIVE_PAPER_POSITIONS:
             ACTIVE_PAPER_POSITIONS.remove(closed_pos)
+        save_paper_positions()
 
         entry = float(closed_pos.get("entry", 145.0))
         current = float(closed_pos.get("current", entry))

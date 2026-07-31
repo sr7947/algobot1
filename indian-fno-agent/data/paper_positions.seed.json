@@ -1,0 +1,27 @@
+{
+  "positions": [
+    {
+      "id": "fbc178cc-a126-4643-b16a-ac82e488f5ae",
+      "signal_id": "fbc178cc-a126-4643-b16a-ac82e488f5ae",
+      "symbol": "BTCUSD",
+      "exchange": "DELTA",
+      "asset_class": "CRYPTO",
+      "expiry": "Perpetual",
+      "direction": "BUY",
+      "qty": 1,
+      "entry": 65200.0,
+      "current": 65200.0,
+      "pnl": 0.0,
+      "sl": 63500.0,
+      "target": 68600.0,
+      "trailingSl": 65200.0,
+      "time": "Just now",
+      "created_at": 1785510084.4489703,
+      "source": "telegram_paper",
+      "leverage": 25.0,
+      "margin": 2.608,
+      "notional": 65.2,
+      "position_leverage": 25.0
+    }
+  ]
+}

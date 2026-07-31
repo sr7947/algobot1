@@ -114,21 +114,46 @@ class TelegramNotifier:
             return None
 
     @staticmethod
-    def _trade_card_keyboard(signal_id: str) -> InlineKeyboardMarkup:
+    def _trade_card_keyboard(signal_id: str, signal: TradeSignal | None = None) -> InlineKeyboardMarkup:
         """
         Build the four-button inline keyboard for a trade proposal card.
 
-        Callback data format: '<action>:<signal_id>'
+        Primary callback embeds trade params so Approve works even if the
+        in-memory signal store is empty (fits Telegram's 64-byte limit).
+
+        Uses named actions (approve / half_size / reject / block) so older
+        bot routers that only recognise those names do not answer
+        "Unknown action" when they win the getUpdates race::
+
+            approve:BTCUSD:BUY:65200:63500:68600:1:25
         """
+        if signal is not None:
+            from telegram_bot.callback_codec import encode_approve_payload
+
+            payload = encode_approve_payload(signal)
+            approve_data = f"approve:{payload}"
+            half_data = f"half_size:{payload}"
+            reject_data = f"reject:{signal_id}"
+            block_data = f"block:{signal_id}"
+            # Safety: Telegram rejects callback_data longer than 64 bytes
+            if len(approve_data.encode("utf-8")) > 64 or len(half_data.encode("utf-8")) > 64:
+                approve_data = f"approve:{signal_id}"
+                half_data = f"half_size:{signal_id}"
+        else:
+            approve_data = f"approve:{signal_id}"
+            reject_data = f"reject:{signal_id}"
+            half_data = f"half_size:{signal_id}"
+            block_data = f"block:{signal_id}"
+
         return InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton("✅ APPROVE",    callback_data=f"approve:{signal_id}"),
-                    InlineKeyboardButton("❌ REJECT",     callback_data=f"reject:{signal_id}"),
+                    InlineKeyboardButton("✅ APPROVE", callback_data=approve_data),
+                    InlineKeyboardButton("❌ REJECT", callback_data=reject_data),
                 ],
                 [
-                    InlineKeyboardButton("💹 HALF SIZE",  callback_data=f"half_size:{signal_id}"),
-                    InlineKeyboardButton("🚫 BLOCK TODAY", callback_data=f"block:{signal_id}"),
+                    InlineKeyboardButton("💹 HALF SIZE", callback_data=half_data),
+                    InlineKeyboardButton("🚫 BLOCK TODAY", callback_data=block_data),
                 ],
             ]
         )
@@ -165,14 +190,31 @@ class TelegramNotifier:
         signal_id = str(signal.id)
         capital: float = float(agent_context.get("capital", 0) or 0)
         strategy_version: str = str(agent_context.get("strategy_version", "1.0"))
+        is_crypto = (
+            str(agent_context.get("asset_class", "")).upper() == "CRYPTO"
+            or str(signal.exchange).upper() == "DELTA"
+            or "BTC" in signal.symbol.upper()
+            or "ETH" in signal.symbol.upper()
+        )
+        currency = "$" if is_crypto else "₹"
+        leverage = agent_context.get("leverage") or (signal.indicators_snapshot or {}).get("leverage")
 
         # Compute derived values
-        lots = signal.quantity // signal.lot_size
+        lots = max(1, signal.quantity // max(1, signal.lot_size))
         confidence_pct = int(signal.confidence_score * 100)
         bar = format_confidence_bar(signal.confidence_score)
         risk_per_unit = abs(signal.entry_price - signal.stop_loss)
-        max_risk_inr = risk_per_unit * signal.quantity
-        max_risk_pct = (max_risk_inr / capital * 100) if capital > 0 else 0.0
+        # Crypto (vanilla): PnL/risk uses contract_value multiplier
+        if is_crypto:
+            try:
+                from risk.delta_margin import get_default_product_spec
+                cv = get_default_product_spec(signal.symbol).contract_value
+            except Exception:
+                cv = 0.001
+            max_risk_amt = risk_per_unit * signal.quantity * cv
+        else:
+            max_risk_amt = risk_per_unit * signal.quantity
+        max_risk_pct = (max_risk_amt / capital * 100) if capital > 0 else 0.0
 
         sl_pct = format_sl_pct(signal.entry_price, signal.stop_loss)
         tgt_pct = format_target_pct(signal.entry_price, signal.target)
@@ -207,16 +249,25 @@ class TelegramNotifier:
         version_esc = escape_md(strategy_version)
         regime_esc = escape_md(format_regime(str(signal.regime)))
         direction_esc = escape_md(format_direction(str(signal.direction)))
-        entry_esc = escape_md(f"₹{signal.entry_price:,.2f}")
-        sl_esc = escape_md(f"₹{signal.stop_loss:,.2f} ({sl_pct})")
-        tgt_esc = escape_md(f"₹{signal.target:,.2f} ({tgt_pct})")
-        qty_esc = escape_md(f"{signal.quantity} units ({lots} lot{'s' if lots != 1 else ''})")
+        entry_esc = escape_md(f"{currency}{signal.entry_price:,.2f}")
+        sl_esc = escape_md(f"{currency}{signal.stop_loss:,.2f} ({sl_pct})")
+        tgt_esc = escape_md(f"{currency}{signal.target:,.2f} ({tgt_pct})")
+        if is_crypto:
+            qty_esc = escape_md(f"{signal.quantity} contract{'s' if signal.quantity != 1 else ''}")
+        else:
+            qty_esc = escape_md(f"{signal.quantity} units ({lots} lot{'s' if lots != 1 else ''})")
         conf_esc = escape_md(f"{confidence_pct}% {bar}")
         rr_esc = escape_md(format_risk_reward(signal.risk_reward))
-        max_risk_esc = escape_md(
-            f"{format_currency(max_risk_inr)} ({max_risk_pct:.2f}% of capital)"
-        )
+        if is_crypto:
+            max_risk_esc = escape_md(f"${max_risk_amt:,.2f} ({max_risk_pct:.2f}% of wallet)")
+        else:
+            max_risk_esc = escape_md(
+                f"{format_currency(max_risk_amt)} ({max_risk_pct:.2f}% of capital)"
+            )
         expiry_esc = escape_md(format_time_ist(signal.expires_at))
+        leverage_line = ""
+        if is_crypto and leverage:
+            leverage_line = f"Leverage: *{escape_md(f'{float(leverage):.0f}x')}*\n"
 
         text = (
             f"🎯 *TRADE PROPOSAL {trade_id}*\n"
@@ -226,6 +277,7 @@ class TelegramNotifier:
             f"Market Regime: {regime_esc}\n"
             f"\n"
             f"Direction: *{direction_esc}*\n"
+            f"{leverage_line}"
             f"Entry: {entry_esc}\n"
             f"Stop Loss: {sl_esc}\n"
             f"Target: {tgt_esc}\n"
@@ -243,7 +295,13 @@ class TelegramNotifier:
             f"{'\\=' * 30}"
         )
 
-        keyboard = self._trade_card_keyboard(signal_id)
+        keyboard = self._trade_card_keyboard(signal_id, signal)
+        # Register so a running TelegramBot can resolve Approve/Reject callbacks
+        try:
+            from telegram_bot.signal_store import register_signal
+            register_signal(signal)
+        except Exception as exc:
+            logger.warning("Could not register signal for Telegram callbacks: %s", exc)
         return await self._send(text, reply_markup=keyboard)
 
     # ------------------------------------------------------------------

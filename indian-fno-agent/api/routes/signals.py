@@ -417,12 +417,24 @@ async def trigger_sample_signal(
         target = 68600.00
         qty = 1
         strategy = "Crypto Trend Breakout"
+        try:
+            from config.settings import get_settings
+            leverage = float(get_settings().DELTA_DEFAULT_LEVERAGE)
+        except Exception:
+            leverage = 25.0
+        from risk.delta_margin import estimate_position_margin, get_default_product_spec, initial_margin_pct_for_leverage
+
+        spec = get_default_product_spec("BTCUSD")
+        im_pct = initial_margin_pct_for_leverage(leverage, spec, size=qty)
+        margin = estimate_position_margin(qty, entry, leverage, product=spec)
         rationale = [
+            f"Order leverage {leverage:.0f}x on Delta India (IM {im_pct:.2f}% → margin ~${margin:.2f})",
             "BTCUSD broke above key 4H resistance at $65,000",
             "Open Interest on Delta Exchange +14% with strong buying volume",
             "RSI momentum bullish at 62 with MACD histogram expansion",
         ]
         news = "Bitcoin ETF net inflows reach $450M; Fed signals upcoming rate cuts"
+        capital = 200.0  # Delta testnet USD wallet
     else:
         sig_symbol = "NIFTY 24400 CE"
         exchange = "NFO"
@@ -432,12 +444,14 @@ async def trigger_sample_signal(
         target = 217.50
         qty = 50
         strategy = "Options Momentum"
+        leverage = None
         rationale = [
             "Price broke above 20-day high with 2.1x volume",
             "ADX at 31 confirms trending market",
             "PCR at 0.75 shows bullish bias",
         ]
         news = "Positive FII inflow data; RBI holds rates steady"
+        capital = 500000.0
 
     from agents.gemini_reasoner import GeminiReasoningEngine
 
@@ -473,7 +487,7 @@ async def trigger_sample_signal(
         regime=MarketRegime.TRENDING_BULL.value,
         rationale=final_rationale,
         news_summary=news,
-        indicators_snapshot={},
+        indicators_snapshot={"leverage": leverage} if is_crypto else {},
         status=SignalStatus.PENDING_APPROVAL.value,
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
     )
@@ -483,12 +497,16 @@ async def trigger_sample_signal(
         bot.register_signal(signal)
 
     notifier = TelegramNotifier()
-    msg_id = await notifier.send_trade_card(signal, {"capital": 500000})
+    msg_id = await notifier.send_trade_card(
+        signal,
+        {"capital": capital, "leverage": leverage, "asset_class": "CRYPTO" if is_crypto else "FNO"},
+    )
 
     return {
         "status": "success",
         "signal_id": str(signal.id),
         "symbol": sig_symbol,
+        "leverage": leverage,
         "telegram_message_id": msg_id,
         "message": f"Sample trade signal for {sig_symbol} triggered and registered in bot memory!",
     }

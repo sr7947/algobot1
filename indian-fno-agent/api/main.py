@@ -3,6 +3,7 @@ FastAPI application — main entry point for the trading agent REST API.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -59,6 +60,15 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"Trading mode: {settings.TRADING_MODE}")
     logger.info(f"Active broker: {settings.BROKER}")
+    try:
+        from api.paper_book import merge_seed, reload as reload_paper
+
+        n = merge_seed(force=False)
+        reload_paper()
+        if n:
+            logger.info("Bootstrapped %d seed paper position(s) for Positions", n)
+    except Exception as exc:
+        logger.warning("Paper book seed bootstrap skipped: %s", exc)
     logger.info("API startup complete.")
 
     yield

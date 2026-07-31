@@ -166,6 +166,17 @@ class Settings(BaseSettings):
         default="paper",
         description="Delta Exchange environment: 'paper' (Testnet) or 'live' (Production).",
     )
+    DELTA_DEFAULT_LEVERAGE: float = Field(
+        default=25.0,
+        ge=1.0,
+        le=200.0,
+        description=(
+            "Default order leverage for Delta Exchange India crypto futures (e.g. 25 → 25x). "
+            "Applied via POST /v2/products/{product_id}/orders/leverage before placing orders. "
+            "Initial Margin% = max(100/leverage, product.initial_margin); "
+            "Order Margin = size × contract_value × price × (IM%/100)."
+        ),
+    )
 
     # Groww
     GROWW_ACCESS_TOKEN: Optional[str] = Field(
@@ -195,6 +206,14 @@ class Settings(BaseSettings):
         description=(
             "Minutes to wait for a user to approve/reject a signal via Telegram "
             "before the signal is automatically marked EXPIRED."
+        ),
+    )
+    PAPER_BOOK_SYNC_URL: str = Field(
+        default="http://127.0.0.1:8000/api/v1/positions/paper",
+        description=(
+            "Optional URL that receives paper fills after Telegram Approve "
+            "(so a separate local API/dashboard process can show Positions). "
+            "Set empty to disable."
         ),
     )
 
@@ -406,6 +425,14 @@ class Settings(BaseSettings):
             return {
                 "broker": broker,
                 "access_token": self.GROWW_ACCESS_TOKEN,
+            }
+        elif broker == "delta_exchange":
+            return {
+                "broker": broker,
+                "api_key": self.DELTA_API_KEY,
+                "api_secret": self.DELTA_API_SECRET,
+                "env": self.DELTA_ENV,
+                "default_leverage": self.DELTA_DEFAULT_LEVERAGE,
             }
         else:
             # Return a minimal config for unknown/custom brokers so that the

@@ -243,12 +243,13 @@ class DeltaExchangeBroker(IBrokerAdapter):
                 except Exception:
                     pass
 
+            import uuid
             inst = Instrument(
-                id=str(prod_id),
+                id=uuid.uuid5(uuid.NAMESPACE_DNS, f"delta_{prod_id}"),
                 symbol=symbol,
                 exchange=Exchange.NSE,  # Map to standard enum
                 instrument_type=itype,
-                lot_size=int(prod.get("contract_value", 1)),
+                lot_size=max(1, int(float(prod.get("contract_value", 1.0)))),
                 tick_size=float(prod.get("tick_size", 0.1)),
                 expiry=expiry_dt,
                 strike=float(prod["strike_price"]) if prod.get("strike_price") else None,

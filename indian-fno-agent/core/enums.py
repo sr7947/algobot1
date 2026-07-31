@@ -24,6 +24,8 @@ class Exchange(str, Enum):
     NFO = "NFO"   # NSE Futures & Options
     BFO = "BFO"   # BSE Futures & Options
     MCX = "MCX"   # Multi Commodity Exchange
+    DELTA = "DELTA" # Delta Exchange (Crypto Futures & Options)
+    CRYPTO = "CRYPTO"
 
 
 # ---------------------------------------------------------------------------

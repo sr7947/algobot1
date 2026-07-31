@@ -394,41 +394,74 @@ async def reject_signal(
 
 
 @router.post("/trigger-sample", status_code=status.HTTP_201_CREATED)
-async def trigger_sample_signal(request: Request) -> Dict[str, Any]:
-    """Generate a sample trade signal, register it in bot memory, and push to Telegram."""
+async def trigger_sample_signal(
+    request: Request,
+    body: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Generate a sample trade signal (NIFTY 50 or Crypto BTCUSD), register in bot memory, and push to Telegram."""
     from uuid import uuid4
     from datetime import datetime, timezone, timedelta
     from core.models import TradeSignal, MarketRegime, SignalStatus
     from telegram_bot.notifier import TelegramNotifier
 
-    bot = getattr(request.app.state, "telegram_bot", None)
+    payload = body or {}
+    sym = str(payload.get("symbol", "NIFTY 24400 CE")).upper()
+    is_crypto = "BTC" in sym or "ETH" in sym or "CRYPTO" in str(payload.get("asset_class", "")).upper()
+
+    if is_crypto:
+        sig_symbol = "BTCUSD"
+        exchange = "DELTA"
+        itype = "FUT"
+        entry = 65200.00
+        sl = 63500.00
+        target = 68600.00
+        qty = 1
+        strategy = "Crypto Trend Breakout"
+        rationale = [
+            "BTCUSD broke above key 4H resistance at $65,000",
+            "Open Interest on Delta Exchange +14% with strong buying volume",
+            "RSI momentum bullish at 62 with MACD histogram expansion",
+        ]
+        news = "Bitcoin ETF net inflows reach $450M; Fed signals upcoming rate cuts"
+    else:
+        sig_symbol = "NIFTY 24400 CE"
+        exchange = "NFO"
+        itype = "CE"
+        entry = 145.00
+        sl = 101.50
+        target = 217.50
+        qty = 50
+        strategy = "Options Momentum"
+        rationale = [
+            "Price broke above 20-day high with 2.1x volume",
+            "ADX at 31 confirms trending market",
+            "PCR at 0.75 shows bullish bias",
+        ]
+        news = "Positive FII inflow data; RBI holds rates steady"
 
     signal = TradeSignal(
         id=uuid4(),
         created_at=datetime.now(timezone.utc),
-        strategy_name="Options Momentum",
-        symbol="NIFTY 24400 CE",
-        exchange="NFO",
-        instrument_type="CE",
+        strategy_name=strategy,
+        symbol=sig_symbol,
+        exchange=exchange,
+        instrument_type=itype,
         direction="BUY",
-        entry_price=145.00,
-        stop_loss=101.50,
-        target=217.50,
-        quantity=50,
-        lot_size=50,
-        confidence_score=0.78,
+        entry_price=entry,
+        stop_loss=sl,
+        target=target,
+        quantity=qty,
+        lot_size=qty,
+        confidence_score=0.82 if is_crypto else 0.78,
         regime=MarketRegime.TRENDING_BULL.value,
-        rationale=[
-            "Price broke above 20-day high with 2.1x volume",
-            "ADX at 31 confirms trending market",
-            "PCR at 0.75 shows bullish bias",
-        ],
-        news_summary="Positive FII inflow data; RBI holds rates steady",
+        rationale=rationale,
+        news_summary=news,
         indicators_snapshot={},
         status=SignalStatus.PENDING_APPROVAL.value,
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
     )
 
+    bot = getattr(request.app.state, "telegram_bot", None)
     if bot:
         bot.register_signal(signal)
 
@@ -438,6 +471,7 @@ async def trigger_sample_signal(request: Request) -> Dict[str, Any]:
     return {
         "status": "success",
         "signal_id": str(signal.id),
+        "symbol": sig_symbol,
         "telegram_message_id": msg_id,
-        "message": "Sample trade signal triggered and registered in bot memory!",
+        "message": f"Sample trade signal for {sig_symbol} triggered and registered in bot memory!",
     }

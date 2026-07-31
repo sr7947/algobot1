@@ -408,7 +408,22 @@ async def trigger_sample_signal(
     sym = str(payload.get("symbol", "NIFTY 24400 CE")).upper()
     is_crypto = "BTC" in sym or "ETH" in sym or "CRYPTO" in str(payload.get("asset_class", "")).upper()
 
-    if is_crypto:
+    if "ETH" in sym:
+        sig_symbol = "ETHUSD"
+        exchange = "DELTA"
+        itype = "FUT"
+        entry = 3450.00
+        sl = 3320.00
+        target = 3710.00
+        qty = 5
+        strategy = "Crypto Trend Breakout"
+        rationale = [
+            "ETHUSD broke above $3,400 key resistance with strong buying volume",
+            "Ethereum Layer 2 TVL reached all-time high of $42 Billion",
+            "Bullish EMA 9/21 cross on 1H timeframe confirmed",
+        ]
+        news = "Ethereum Staking ratio hits 28% as institutional demand grows"
+    elif is_crypto:
         sig_symbol = "BTCUSD"
         exchange = "DELTA"
         itype = "FUT"

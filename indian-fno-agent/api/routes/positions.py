@@ -106,7 +106,25 @@ async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[
     sym = str(payload.get("symbol", "BTCUSD")).upper()
     is_crypto = "BTC" in sym or "ETH" in sym or "CRYPTO" in str(payload.get("asset_class", "")).upper()
 
-    if is_crypto:
+    if "ETH" in sym:
+        pos = {
+            "id": f"eth-{int(time.time())}",
+            "symbol": "ETHUSD",
+            "exchange": "DELTA",
+            "asset_class": "CRYPTO",
+            "expiry": "Perpetual",
+            "direction": str(payload.get("direction", "BUY")),
+            "qty": int(payload.get("qty", 5)),
+            "entry": 3450.00,
+            "current": 3482.50,
+            "pnl": 162.50,
+            "sl": 3320.00,
+            "target": 3710.00,
+            "trailingSl": 3450.00,
+            "time": "Just now",
+            "created_at": time.time(),
+        }
+    elif is_crypto:
         pos = {
             "id": f"btc-{int(time.time())}",
             "symbol": "BTCUSD",

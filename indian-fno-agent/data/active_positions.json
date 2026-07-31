@@ -1,5 +1,40 @@
 [
   {
+    "id": "eth-1785522374",
+    "symbol": "ETHUSD",
+    "exchange": "DELTA",
+    "asset_class": "CRYPTO",
+    "expiry": "Perpetual",
+    "direction": "BUY",
+    "qty": 5,
+    "entry": 3450.0,
+    "current": 3482.5,
+    "pnl": 162.5,
+    "sl": 3320.0,
+    "target": 3710.0,
+    "trailingSl": 3450.0,
+    "time": "Just now",
+    "created_at": 1785522374.80054
+  },
+  {
+    "id": "649f5da1-3452-4cac-9d97-811769dc346a",
+    "symbol": "BTCUSD",
+    "exchange": "DELTA",
+    "asset_class": "CRYPTO",
+    "expiry": "04-AUG-2026",
+    "direction": "BUY",
+    "qty": 1,
+    "entry": 65200.0,
+    "current": 65200.0,
+    "pnl": 0.0,
+    "sl": 63500.0,
+    "target": 68600.0,
+    "trailingSl": 65200.0,
+    "time": "Just now",
+    "created_at": 1785522318.9137595,
+    "frozen_price": 65203.57
+  },
+  {
     "id": "btc-1785516794",
     "symbol": "BTCUSD",
     "exchange": "DELTA",
@@ -15,6 +50,6 @@
     "trailingSl": 65200.0,
     "time": "Just now",
     "created_at": 1785516794.3894029,
-    "frozen_price": 65211.99
+    "frozen_price": 65869.86
   }
 ]

@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -435,3 +435,47 @@ async def get_exposure(
         concentration_risk=concentration,
         as_of=datetime.utcnow(),
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Route: GET /risk/margins — Live Real-Time Broker Margins
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get(
+    "/margins",
+    summary="Real-time live account balances from active broker",
+)
+async def get_live_margins(request: Request) -> Dict[str, Any]:
+    """Fetch live real-time wallet balances & margins directly from active broker (Delta Exchange / Paper)."""
+    broker = getattr(request.app.state, "broker", None)
+    if not broker:
+        from broker.base import BrokerFactory
+        from config.settings import get_settings
+        settings = get_settings()
+        broker = BrokerFactory.create(settings.BROKER, settings)
+        await broker.login()
+
+    try:
+        margins = await broker.get_margins()
+        is_crypto = getattr(broker, "broker_name", "") == "delta_exchange"
+        return {
+            "status": "success",
+            "broker": getattr(broker, "broker_name", "paper"),
+            "currency": "USD" if is_crypto else "INR",
+            "symbol": "$" if is_crypto else "₹",
+            "total_balance": round(float(margins.available_cash), 2),
+            "available_margin": round(float(margins.available_margin), 2),
+            "used_margin": round(float(margins.used_margin), 2),
+        }
+    except Exception as exc:
+        logger.exception("Failed to fetch live margins: %s", exc)
+        return {
+            "status": "error",
+            "broker": "paper",
+            "currency": "USD",
+            "symbol": "$",
+            "total_balance": 200.00,
+            "available_margin": 200.00,
+            "used_margin": 0.00,
+        }
+

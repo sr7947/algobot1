@@ -20,12 +20,34 @@ export default function Dashboard() {
   const { assetClass } = useAppStore();
   const [positionsCount, setPositionsCount] = useState<number>(0);
   const [signals] = useState<SignalItem[]>([]);
+  const [liveMargin, setLiveMargin] = useState<{
+    total_balance: number;
+    available_margin: number;
+    used_margin: number;
+    symbol: string;
+  }>({
+    total_balance: assetClass === 'CRYPTO' ? 200.00 : 500000,
+    available_margin: assetClass === 'CRYPTO' ? 200.00 : 500000,
+    used_margin: 0,
+    symbol: assetClass === 'CRYPTO' ? '$' : '₹',
+  });
 
   const fetchDashboardData = async () => {
     try {
-      const posRes = await axios.get('/api/v1/positions');
+      const [posRes, marginRes] = await Promise.all([
+        axios.get('/api/v1/positions'),
+        axios.get('/api/v1/risk/margins'),
+      ]);
       if (posRes.data && posRes.data.positions) {
         setPositionsCount(posRes.data.positions.length);
+      }
+      if (marginRes.data && marginRes.data.status === 'success') {
+        setLiveMargin({
+          total_balance: marginRes.data.total_balance,
+          available_margin: marginRes.data.available_margin,
+          used_margin: marginRes.data.used_margin,
+          symbol: marginRes.data.symbol,
+        });
       }
     } catch (err) {
       console.warn('Dashboard sync error:', err);
@@ -41,9 +63,9 @@ export default function Dashboard() {
   const isCrypto = assetClass === 'CRYPTO';
   const currencySymbol = isCrypto ? '$' : '₹';
 
-  const totalCapital = isCrypto ? 100.00 : 500000;
-  const usedMargin = isCrypto ? (positionsCount * 15.00) : (positionsCount * 15000);
-  const availableMargin = totalCapital - usedMargin;
+  const totalCapital = liveMargin.total_balance || (isCrypto ? 200.00 : 500000);
+  const usedMargin = liveMargin.used_margin || (positionsCount * (isCrypto ? 15.00 : 15000));
+  const availableMargin = liveMargin.available_margin || (totalCapital - usedMargin);
 
   const stats = [
     { label: 'Daily P&L', value: `${currencySymbol}0.00`, change: '+0.0%', positive: true, icon: TrendingUp },

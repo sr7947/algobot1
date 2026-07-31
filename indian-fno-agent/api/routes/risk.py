@@ -486,16 +486,21 @@ async def get_live_margins(
     # CRYPTO Mode
     from api.routes.positions import ACTIVE_PAPER_POSITIONS
     crypto_positions = [p for p in ACTIVE_PAPER_POSITIONS if p.get("asset_class") == "CRYPTO"]
-    used_m = sum(float(p.get("entry", 65200.0)) * int(p.get("qty", 1)) * 0.1 for p in crypto_positions)
+
+    # Delta Exchange contract multiplier: 1 contract = 0.001 BTC (~$65.20 notional). At 10x leverage = $6.52 initial margin.
+    used_m = sum(float(p.get("entry", 65200.0)) * int(p.get("qty", 1)) * 0.001 * 0.1 for p in crypto_positions)
     tot_bal = 200.00
+    avail_m = max(0.0, tot_bal - used_m)
 
     broker = getattr(request.app.state, "broker", None)
     if broker and getattr(broker, "_authenticated", False):
         try:
             m = await asyncio.wait_for(broker.get_margins(), timeout=1.0)
             tot_bal = round(float(m.available_cash), 2)
+            avail_m = round(float(m.available_margin), 2)
+            used_m = round(float(m.used_margin), 2)
         except Exception:
-            pass
+            avail_m = max(0.0, round(tot_bal - used_m, 2))
 
     res = {
         "status": "success",
@@ -503,7 +508,7 @@ async def get_live_margins(
         "currency": "USD",
         "symbol": "$",
         "total_balance": tot_bal,
-        "available_margin": round(tot_bal - used_m, 2),
+        "available_margin": avail_m,
         "used_margin": round(used_m, 2),
     }
     _MARGINS_CACHE[cache_key] = res

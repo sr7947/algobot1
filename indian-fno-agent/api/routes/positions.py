@@ -349,9 +349,11 @@ async def list_positions_raw(asset_class: Optional[str] = Query(None)) -> Dict[s
             # Market is closed (after 3:30 PM IST) — freeze at 3:30 PM closing level
             current_price = float(pos.get("frozen_price", pos.get("current", entry)))
 
-        pnl = round((current_price - entry) * qty, 2)
+        multiplier = 0.001 if pos_class == "CRYPTO" else 1.0
+        pnl = round((current_price - entry) * qty * multiplier, 2)
         p = dict(pos)
         p["asset_class"] = pos_class
+        p["leverage"] = "25x (25% Margin)" if pos_class == "CRYPTO" else "1x"
         p["current"] = current_price
         p["pnl"] = pnl
         p["market_status"] = "OPEN 24/7" if pos_class == "CRYPTO" else ("OPEN" if market_open else "CLOSED")
@@ -425,14 +427,16 @@ async def close_position_simple(position_id: str) -> Dict[str, Any]:
         entry = float(closed_pos.get("entry", 145.0))
         current = float(closed_pos.get("current", entry))
         qty = int(closed_pos.get("qty", 1))
-        pnl = round((current - entry) * qty, 2)
         asset_cls = closed_pos.get("asset_class", "FNO")
+        multiplier = 0.001 if asset_cls == "CRYPTO" else 1.0
+        pnl = round((current - entry) * qty * multiplier, 2)
 
         trade_record = {
             "id": closed_pos["id"],
             "symbol": closed_pos["symbol"],
             "exchange": closed_pos.get("exchange", "NFO"),
             "asset_class": asset_cls,
+            "leverage": "25x (25% Margin)" if asset_cls == "CRYPTO" else "1x",
             "direction": closed_pos.get("direction", "BUY"),
             "qty": qty,
             "entry": entry,

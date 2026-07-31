@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Download, RefreshCw, Calendar, ArrowUpRight, ArrowDownRight, CheckCircle2, Coins } from 'lucide-react';
+import { Download, RefreshCw, Calendar, ArrowUpRight, ArrowDownRight, CheckCircle2, Coins, Zap } from 'lucide-react';
 import axios from 'axios';
 import { useAppStore } from '../store/useAppStore';
 
@@ -8,6 +8,7 @@ interface ClosedTradeItem {
   symbol: string;
   exchange: string;
   asset_class?: string;
+  leverage?: string;
   direction: string;
   qty: number;
   entry: number;
@@ -77,7 +78,7 @@ export default function Trades() {
   }, [assetClass]);
 
   const stats = [
-    { label: 'Total P&L', value: `${currencySymbol}${analytics.total_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, positive: analytics.total_pnl >= 0 },
+    { label: 'Total Realized P&L', value: `${currencySymbol}${analytics.total_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, positive: analytics.total_pnl >= 0 },
     { label: 'Win Rate', value: `${analytics.win_rate.toFixed(1)}%`, positive: analytics.win_rate >= 50 },
     { label: 'Profit Factor', value: `${analytics.profit_factor.toFixed(2)}`, positive: analytics.profit_factor >= 1.0 },
     { label: 'Total Closed Trades', value: `${analytics.total_trades}`, positive: true },
@@ -106,13 +107,20 @@ export default function Trades() {
           </span>
         </div>
 
-        <a
-          href={`/api/v1/trades/export?asset_class=${assetClass}`}
-          download
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-navy-800 border border-gray-700 text-sm text-gray-300 hover:text-white transition-colors cursor-pointer"
-        >
-          <Download className="w-4 h-4" /> Export CSV
-        </a>
+        <div className="flex items-center gap-2">
+          {isCrypto && (
+            <span className="text-xs px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 font-medium flex items-center gap-1">
+              <Zap className="w-3.5 h-3.5 text-yellow-400" /> Delta Default Leverage: 25x (25% Margin)
+            </span>
+          )}
+          <a
+            href={`/api/v1/trades/export?asset_class=${assetClass}`}
+            download
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-navy-800 border border-gray-700 text-sm text-gray-300 hover:text-white transition-colors cursor-pointer"
+          >
+            <Download className="w-4 h-4" /> Export CSV
+          </a>
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -130,7 +138,7 @@ export default function Trades() {
         <div className="p-4 border-b border-gray-800 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            Closed Positions Log ({isCrypto ? 'Crypto Mode' : 'Indian F&O Mode'})
+            Closed Positions Log ({isCrypto ? 'Crypto Mode — 0.001 BTC Contract Multiplier' : 'Indian F&O Mode'})
           </h3>
           <span className="text-xs text-gray-500">{trades.length} trades recorded</span>
         </div>
@@ -141,6 +149,7 @@ export default function Trades() {
               <tr className="border-b border-gray-800 text-gray-400 text-xs uppercase">
                 <th className="text-left p-4">Symbol / Strategy</th>
                 <th className="text-center p-4">Direction</th>
+                <th className="text-center p-4">Leverage</th>
                 <th className="text-right p-4">Qty</th>
                 <th className="text-right p-4">Entry Price</th>
                 <th className="text-right p-4">Exit Price</th>
@@ -153,7 +162,7 @@ export default function Trades() {
             <tbody>
               {trades.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-12 text-center text-gray-500 text-xs">
+                  <td colSpan={10} className="p-12 text-center text-gray-500 text-xs">
                     No closed trades recorded yet in {isCrypto ? 'Crypto' : 'Indian F&O'} mode.
                     <br />
                     When you manually close an open position or take profit, it will instantly appear here!
@@ -172,11 +181,16 @@ export default function Trades() {
                         {t.direction}
                       </span>
                     </td>
+                    <td className="p-4 text-center">
+                      <span className="text-xs px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-medium">
+                        {t.leverage || (isCrypto ? '25x (25% Margin)' : '1x')}
+                      </span>
+                    </td>
                     <td className="p-4 text-right font-semibold">{t.qty}</td>
                     <td className="p-4 text-right text-gray-300">{currencySymbol}{t.entry.toFixed(2)}</td>
                     <td className="p-4 text-right font-bold text-white">{currencySymbol}{t.exit.toFixed(2)}</td>
                     <td className={`p-4 text-right font-bold text-base ${t.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {t.pnl >= 0 ? '+' : ''}{currencySymbol}{t.pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {t.pnl >= 0 ? '+' : ''}{currencySymbol}{t.pnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td className="p-4 text-right text-gray-400">{currencySymbol}{t.charges.toFixed(2)}</td>
                     <td className="p-4 text-center">

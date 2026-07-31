@@ -487,8 +487,8 @@ async def get_live_margins(
     from api.routes.positions import ACTIVE_PAPER_POSITIONS
     crypto_positions = [p for p in ACTIVE_PAPER_POSITIONS if p.get("asset_class") == "CRYPTO"]
 
-    # Delta Exchange contract multiplier: 1 contract = 0.001 BTC (~$65.20 notional). At 10x leverage = $6.52 initial margin.
-    used_m = sum(float(p.get("entry", 65200.0)) * int(p.get("qty", 1)) * 0.001 * 0.1 for p in crypto_positions)
+    # Delta Exchange contract multiplier: 1 contract = 0.001 BTC (~$65.20 notional). At 25x leverage = $2.61 initial margin.
+    used_m = sum(float(p.get("entry", 65200.0)) * int(p.get("qty", 1)) * 0.001 * (1.0 / 25.0) for p in crypto_positions)
     tot_bal = 200.00
     avail_m = max(0.0, tot_bal - used_m)
 

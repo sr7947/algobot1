@@ -18,7 +18,20 @@ interface PositionItem {
   asset_class?: string;
   trailingSl?: number | null;
   time: string;
+  leverage?: number;
+  position_leverage?: number;
+  margin?: number;
 }
+
+const SAMPLE_BTC = {
+  symbol: 'BTCUSD',
+  direction: 'BUY',
+  entry: 65200,
+  qty: 1,
+  leverage: 25,
+  current: 65200,
+  asset_class: 'CRYPTO',
+};
 
 export default function Positions() {
   const { assetClass } = useAppStore();
@@ -42,6 +55,14 @@ export default function Positions() {
     }
   };
 
+  const ensurePaperBtcVisible = async () => {
+    try {
+      await axios.post('/api/v1/positions/load-seed');
+    } catch {
+      await axios.post('/api/v1/positions/create-sample', SAMPLE_BTC);
+    }
+  };
+
   const handleClosePosition = async (id: string | number, symbol: string) => {
     try {
       await axios.post(`/api/v1/positions/${id}/close`);
@@ -57,20 +78,48 @@ export default function Positions() {
 
   const handleLoadSeed = async () => {
     try {
-      const res = await axios.post('/api/v1/positions/load-seed');
-      const n = res.data?.crypto_open ?? res.data?.added ?? 0;
-      toast.success(n ? `Loaded ${n} paper position(s)` : 'No seed positions to load');
-      fetchPositions();
+      await ensurePaperBtcVisible();
+      toast.success('Paper BTC position loaded');
+      await fetchPositions();
     } catch (err) {
       console.error(err);
       toast.error('Could not load paper positions — is the API running on :8000?');
     }
   };
 
+  const handleShowSampleBtc = async () => {
+    try {
+      await axios.post('/api/v1/positions/create-sample', SAMPLE_BTC);
+      toast.success('BTCUSD paper position placed');
+      await fetchPositions();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to create sample position');
+    }
+  };
+
   useEffect(() => {
-    fetchPositions();
+    let cancelled = false;
+    const boot = async () => {
+      await fetchPositions();
+      if (cancelled || assetClass !== 'CRYPTO') return;
+      try {
+        const res = await axios.get('/api/v1/positions?asset_class=CRYPTO');
+        const rows = res.data?.positions || [];
+        if (!cancelled && rows.length === 0) {
+          await ensurePaperBtcVisible();
+          if (!cancelled) await fetchPositions();
+        }
+      } catch {
+        /* API down */
+      }
+    };
+    boot();
     const interval = setInterval(fetchPositions, 2000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [assetClass]);
 
   const totalPnl = positions.reduce((sum, p) => sum + p.pnl, 0);
@@ -96,13 +145,22 @@ export default function Positions() {
 
         <div className="flex items-center gap-3">
           {isCrypto && (
-            <button
-              type="button"
-              onClick={handleLoadSeed}
-              className="text-xs px-3 py-1.5 rounded-lg border border-purple-500/40 text-purple-300 hover:bg-purple-500/10"
-            >
-              Load Telegram paper fills
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleLoadSeed}
+                className="text-xs px-3 py-1.5 rounded-lg border border-purple-500/40 text-purple-300 hover:bg-purple-500/10"
+              >
+                Load Telegram paper fills
+              </button>
+              <button
+                type="button"
+                onClick={handleShowSampleBtc}
+                className="text-xs px-3 py-1.5 rounded-lg border border-yellow-500/40 text-yellow-300 hover:bg-yellow-500/10"
+              >
+                Show sample BTC
+              </button>
+            </>
           )}
           <div className={`text-2xl font-bold ${totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
             {totalPnl >= 0 ? '+' : ''}{currencySymbol}{totalPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -134,9 +192,23 @@ export default function Positions() {
               {positions.length === 0 ? (
                 <tr>
                   <td colSpan={isCrypto ? 13 : 10} className="p-8 text-center text-gray-500 text-xs">
-                    {isCrypto
-                      ? 'No active Crypto open positions. Telegram paper fills appear when Approve runs on the same machine as this API — or click “Load Telegram paper fills” after git pull.'
-                      : 'No active Indian F&O open positions. Approved trades from Telegram will appear here in real time.'}
+                    {isCrypto ? (
+                      <div className="space-y-3">
+                        <p>
+                          No active Crypto open positions. Telegram Approve writes to the API host —
+                          this page only shows fills from <code className="text-gray-400">localhost:8000</code>.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleShowSampleBtc}
+                          className="text-xs px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 hover:bg-yellow-500/30"
+                        >
+                          Show sample BTC position now
+                        </button>
+                      </div>
+                    ) : (
+                      'No active Indian F&O open positions. Approved trades from Telegram will appear here in real time.'
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -157,17 +229,17 @@ export default function Positions() {
                     <td className="p-4 text-right font-semibold">{pos.qty}</td>
                     {isCrypto && (
                       <td className="p-4 text-right text-yellow-400 font-medium">
-                        {(pos as { leverage?: number }).leverage ?? 25}x
+                        {pos.leverage ?? 25}x
                       </td>
                     )}
                     {isCrypto && (
                       <td className="p-4 text-right text-amber-300 font-medium">
-                        {Number((pos as { position_leverage?: number }).position_leverage ?? (pos as { leverage?: number }).leverage ?? 25).toFixed(2)}x
+                        {Number(pos.position_leverage ?? pos.leverage ?? 25).toFixed(2)}x
                       </td>
                     )}
                     {isCrypto && (
                       <td className="p-4 text-right text-gray-300">
-                        {currencySymbol}{Number((pos as { margin?: number }).margin ?? 0).toFixed(2)}
+                        {currencySymbol}{Number(pos.margin ?? 0).toFixed(2)}
                       </td>
                     )}
                     <td className="p-4 text-right text-gray-300">{currencySymbol}{pos.entry.toFixed(2)}</td>

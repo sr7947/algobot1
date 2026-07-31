@@ -34,8 +34,17 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.db_pool = None      # asyncpg pool placeholder
     app.state.redis = None        # Redis client placeholder
-    app.state.broker = None       # IBrokerAdapter instance
     app.state.orchestrator = None  # TradingOrchestrator instance
+
+    # Instantiate Broker Adapter
+    try:
+        from broker.base import BrokerFactory
+        app.state.broker = BrokerFactory.create(settings.BROKER, settings)
+        await app.state.broker.login()
+        logger.info(f"Broker adapter '{settings.BROKER}' instantiated and connected successfully.")
+    except Exception as e:
+        logger.error(f"Failed to instantiate broker '{settings.BROKER}': {e}")
+        app.state.broker = None
 
     # Initialize & start Telegram bot polling
     try:

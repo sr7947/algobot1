@@ -38,7 +38,7 @@ from datetime import date, datetime
 from typing import Any, Optional
 
 from broker.base import IBrokerAdapter
-from core.enums import Exchange, OrderSide, OrderStatus, OrderType
+from core.enums import Exchange, TradeDirection as OrderSide, OrderStatus, OrderType
 from core.models import (
     Candle,
     Instrument,

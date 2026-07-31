@@ -324,12 +324,17 @@ class TelegramBot:
 
     async def _error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Global error handler for the bot."""
+        err_msg = str(context.error)
+        if "Conflict" in err_msg or "terminated by other getUpdates" in err_msg:
+            logger.warning("Telegram Bot Conflict: another bot instance/process is currently polling.")
+            return
+
         logger.error(f"Telegram bot error: {context.error}", exc_info=context.error)
         if isinstance(update, Update) and update.effective_chat:
             try:
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
-                    text=f"⚠️ Bot error: {str(context.error)[:200]}",
+                    text=f"⚠️ Bot error: {err_msg[:200]}",
                 )
             except Exception:
                 pass

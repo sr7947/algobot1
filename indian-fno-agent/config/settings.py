@@ -153,6 +153,20 @@ class Settings(BaseSettings):
         description="Dhan client ID.",
     )
 
+    # Delta Exchange (Crypto Futures & Options)
+    DELTA_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Delta Exchange API Key.",
+    )
+    DELTA_API_SECRET: Optional[str] = Field(
+        default=None,
+        description="Delta Exchange API Secret.",
+    )
+    DELTA_ENV: str = Field(
+        default="paper",
+        description="Delta Exchange environment: 'paper' (Testnet) or 'live' (Production).",
+    )
+
     # Groww
     GROWW_ACCESS_TOKEN: Optional[str] = Field(
         default=None,

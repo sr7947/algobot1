@@ -369,10 +369,11 @@ class BrokerFactory:
 
     # Maps broker_name -> (module_path, class_name)
     _REGISTRY: dict[str, tuple[str, str]] = {
-        "angel_one": ("broker.angel_one", "AngelOneBroker"),
-        "paper":     ("broker.paper",     "PaperBroker"),
-        "dhan":      ("broker.dhan",      "DhanBroker"),
-        "groww":     ("broker.groww",     "GrowwBroker"),
+        "angel_one":      ("broker.angel_one",      "AngelOneBroker"),
+        "paper":          ("broker.paper",          "PaperBroker"),
+        "dhan":           ("broker.dhan",           "DhanBroker"),
+        "groww":          ("broker.groww",          "GrowwBroker"),
+        "delta_exchange": ("broker.delta_exchange", "DeltaExchangeBroker"),
     }
 
     @staticmethod

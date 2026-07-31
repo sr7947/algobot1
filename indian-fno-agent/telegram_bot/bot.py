@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 from functools import wraps
-from typing import Optional
+from typing import Any, Optional
 
 from telegram import BotCommand, Update
 from telegram.ext import (
@@ -22,6 +22,7 @@ from telegram_bot.handlers import (
     handle_half_size,
     handle_reject,
 )
+from telegram_bot import signal_store as shared_signals
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ def admin_only(func):
 
         if update and update.effective_user:
             user_id = update.effective_user.id
-            allowed = int(settings.TELEGRAM_CHAT_ID) if settings.TELEGRAM_CHAT_ID and str(settings.TELEGRAM_CHAT_ID).isdigit() else None
+            allowed = int(settings.TELEGRAM_CHAT_ID) if settings.TELEGRAM_CHAT_ID and str(settings.TELEGRAM_CHAT_ID).lstrip("-").isdigit() else None
             if allowed and user_id != allowed:
                 if update.message:
                     await update.message.reply_text("⛔ Unauthorized. You are not the admin.")
@@ -65,15 +66,15 @@ class TelegramBot:
         self.position_tracker = position_tracker
         self.kill_switch = kill_switch
         self._app: Optional[Application] = None
-        self._signal_store: dict[str, Any] = {}
+        # Always use the process-wide store so sample scripts / API routes
+        # and the polling bot share the same pending signals.
+        self._signal_store = shared_signals.get_signal_store()
 
     def register_signal(self, signal: Any) -> None:
-        """Register a signal in the bot's signal_store so button callbacks can look it up."""
-        signal_id = str(signal.id) if hasattr(signal, "id") else str(signal)
-        self._signal_store[signal_id] = signal
-        if self._app and hasattr(self._app, "bot_data"):
-            if "signal_store" not in self._app.bot_data:
-                self._app.bot_data["signal_store"] = self._signal_store
+        """Register a signal so Approve/Reject callbacks can look it up."""
+        signal_id = shared_signals.register_signal(signal)
+        if self._app is not None:
+            self._app.bot_data["signal_store"] = self._signal_store
             self._app.bot_data["signal_store"][signal_id] = signal
 
     async def start(self) -> None:
@@ -84,10 +85,13 @@ class TelegramBot:
 
         builder = Application.builder().token(settings.TELEGRAM_BOT_TOKEN)
         self._app = builder.build()
-        self._signal_store: dict[str, Any] = {}
+        self._signal_store = shared_signals.get_signal_store()
         self._app.bot_data["signal_store"] = self._signal_store
         self._app.bot_data["orchestrator"] = self.orchestrator
-        self._app.bot_data["admin_id"] = int(settings.TELEGRAM_CHAT_ID) if settings.TELEGRAM_CHAT_ID and str(settings.TELEGRAM_CHAT_ID).isdigit() else 0
+        chat = settings.TELEGRAM_CHAT_ID
+        self._app.bot_data["admin_id"] = (
+            int(chat) if chat and str(chat).lstrip("-").isdigit() else 0
+        )
 
         # Register command handlers
         self._app.add_handler(CommandHandler("start", self._cmd_start))
@@ -99,6 +103,8 @@ class TelegramBot:
         self._app.add_handler(CommandHandler("killswitch", self._cmd_killswitch))
         self._app.add_handler(CommandHandler("resume", self._cmd_resume))
         self._app.add_handler(CommandHandler("mode", self._cmd_mode))
+        self._app.add_handler(CommandHandler("approve", self._cmd_approve))
+        self._app.add_handler(CommandHandler("reject", self._cmd_reject))
 
         # Register inline button callback handler
         self._app.add_handler(CallbackQueryHandler(self._handle_callback))
@@ -116,13 +122,25 @@ class TelegramBot:
             BotCommand("killswitch", "Emergency stop"),
             BotCommand("resume", "Deactivate kill switch"),
             BotCommand("mode", "Switch paper/live mode"),
+            BotCommand("approve", "Approve latest (or /approve <id>)"),
+            BotCommand("reject", "Reject latest (or /reject <id>)"),
             BotCommand("help", "All commands"),
         ])
+
+        # Clear webhook so polling owns getUpdates (avoids 409 Conflict)
+        try:
+            await self._app.bot.delete_webhook(drop_pending_updates=True)
+            logger.info("Cleared Telegram webhook before polling.")
+        except Exception as exc:
+            logger.warning("delete_webhook failed (continuing): %s", exc)
 
         # Start polling
         await self._app.initialize()
         await self._app.start()
-        await self._app.updater.start_polling(drop_pending_updates=True)
+        await self._app.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=["message", "callback_query"],
+        )
         logger.info("Telegram bot started (polling mode).")
 
     async def stop(self) -> None:
@@ -162,6 +180,8 @@ class TelegramBot:
             "/killswitch \\— 🚨 Emergency stop\n"
             "/resume \\— Resume after kill switch\n"
             "/mode paper\\|live \\— Switch mode\n"
+            "/approve \\[id\\] \\— Approve latest or by id\n"
+            "/reject \\[id\\] \\— Reject latest or by id\n"
             "/help \\— This message\n",
             parse_mode="MarkdownV2",
         )
@@ -280,6 +300,76 @@ class TelegramBot:
 
         await update.message.reply_text(f"✅ Mode switched to `{new_mode}`.", parse_mode="Markdown")
 
+    @admin_only
+    async def _cmd_approve(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Approve a pending signal by id, or the most recently registered one."""
+        await self._cmd_decide(update, context, action="APPROVE")
+
+    @admin_only
+    async def _cmd_reject(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Reject a pending signal by id, or the most recently registered one."""
+        await self._cmd_decide(update, context, action="REJECT")
+
+    async def _cmd_decide(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        action: str,
+    ) -> None:
+        from telegram_bot.signal_store import get_signal, get_signal_store, register_signal
+        from core.enums import SignalStatus
+        from api.paper_book import add_paper_position
+
+        args = context.args or []
+        store = get_signal_store()
+        signal = None
+        signal_id = None
+
+        if args:
+            signal_id = args[0].strip()
+            signal = get_signal(signal_id)
+        elif store:
+            # Most recent pending
+            signal_id, signal = list(store.items())[-1]
+
+        if signal is None:
+            await update.message.reply_text(
+                "No pending signal found.\n"
+                "Send a sample trade first, then /approve or /approve <signal_id>."
+            )
+            return
+
+        is_crypto = (
+            str(getattr(signal, "exchange", "")).upper() == "DELTA"
+            or "BTC" in str(signal.symbol).upper()
+        )
+        currency = "$" if is_crypto else "₹"
+        lev = (getattr(signal, "indicators_snapshot", None) or {}).get("leverage")
+        lev_txt = f" @ {float(lev):.0f}x" if lev else ""
+
+        if action == "APPROVE":
+            try:
+                add_paper_position(signal)
+                register_signal(
+                    signal.model_copy(update={"status": SignalStatus.APPROVED})
+                    if hasattr(signal, "model_copy")
+                    else signal
+                )
+                await update.message.reply_text(
+                    f"✅ APPROVED {signal.symbol}\n"
+                    f"PAPER_ORDER_EXECUTED: {signal.quantity} qty @ {currency}{signal.entry_price:.2f}{lev_txt}\n"
+                    f"id: {signal_id}"
+                )
+            except Exception as exc:
+                await update.message.reply_text(f"Approve failed: {exc}")
+        else:
+            try:
+                if hasattr(signal, "model_copy"):
+                    register_signal(signal.model_copy(update={"status": SignalStatus.REJECTED}))
+                await update.message.reply_text(f"❌ REJECTED {signal.symbol}\nid: {signal_id}")
+            except Exception as exc:
+                await update.message.reply_text(f"Reject failed: {exc}")
+
     # ── Callback Query Router ────────────────────────────────────────
 
     async def _handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -288,24 +378,45 @@ class TelegramBot:
         if not query or not query.data:
             return
 
-        # Verify admin
+        # Verify admin — allow either matching user id or matching chat id
+        # (private chats: user_id == chat_id; groups: chat is negative).
         user_id = query.from_user.id if query.from_user else None
-        allowed = int(settings.TELEGRAM_CHAT_ID) if settings.TELEGRAM_CHAT_ID else None
-        if user_id != allowed:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        allowed_raw = settings.TELEGRAM_CHAT_ID
+        allowed = int(allowed_raw) if allowed_raw and str(allowed_raw).lstrip("-").isdigit() else None
+        if allowed is not None and user_id != allowed and chat_id != allowed:
             await query.answer("⛔ Unauthorized.", show_alert=True)
+            logger.warning(
+                "Unauthorized callback user_id=%s chat_id=%s allowed=%s",
+                user_id,
+                chat_id,
+                allowed,
+            )
             return
 
+        # Ensure callback handlers always see the shared store + orchestrator
+        context.bot_data["signal_store"] = self._signal_store
+        context.bot_data["orchestrator"] = self.orchestrator
+        context.bot_data.setdefault("admin_id", allowed or 0)
+
         data = query.data
-        if data.startswith("approve:"):
-            await handle_approve(update, context, self.orchestrator)
-        elif data.startswith("reject:"):
-            await handle_reject(update, context, self.orchestrator)
-        elif data.startswith("half_size:"):
-            await handle_half_size(update, context, self.orchestrator)
-        elif data.startswith("block:"):
-            await handle_block_similar(update, context, self.orchestrator)
-        else:
-            await query.answer("Unknown action.")
+        try:
+            if data.startswith("approve:"):
+                await handle_approve(update, context, self.orchestrator)
+            elif data.startswith("reject:"):
+                await handle_reject(update, context, self.orchestrator)
+            elif data.startswith("half_size:"):
+                await handle_half_size(update, context, self.orchestrator)
+            elif data.startswith("block:"):
+                await handle_block_similar(update, context, self.orchestrator)
+            else:
+                await query.answer("Unknown action.")
+        except Exception as exc:
+            logger.exception("Callback handler failed for data=%s: %s", data, exc)
+            try:
+                await query.answer(f"Error: {str(exc)[:160]}", show_alert=True)
+            except Exception:
+                pass
 
     # ── Error Handler ────────────────────────────────────────────────
 

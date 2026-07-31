@@ -1,49 +1,48 @@
-# Python
-__pycache__/
-*.py[cod]
+
 *$py.class
-*.so
-.Python
-env/
 build/
+.coverage
+dashboard/build/
+dashboard/dist/
+# Dashboard / Node
+dashboard/node_modules/
+data/pending_telegram_signals.json
+*.db
 develop-eggs/
 dist/
 downloads/
-eggs/
+.DS_Store
+*.egg
+*.egg-info/
 .eggs/
+eggs/
+env/
+ENV/
+# Environment / Credentials
+.env.*.local
+.env.local
+.eslintcache
+htmlcov/
+.idea/
+# IDE / OS
+.installed.cfg
 lib/
 lib64/
+*.log
+node_modules/
+.npm
 parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+__pycache__/
+*.py[cod]
 .pytest_cache/
-.coverage
-htmlcov/
+# Python
+.Python
+sdist/
+*.so
+*.sqlite3
+Thumbs.db
+var/
 .venv/
 venv/
-ENV/
-
-# Dashboard / Node
-node_modules/
-dashboard/node_modules/
-dashboard/dist/
-dashboard/build/
-.npm
-.eslintcache
-
-# Environment / Credentials
-.env.local
-.env.*.local
-*.log
-*.sqlite3
-*.db
-
-# IDE / OS
 .vscode/
-.idea/
-.DS_Store
-Thumbs.db
+wheels/

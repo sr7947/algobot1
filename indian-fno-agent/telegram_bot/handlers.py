@@ -131,12 +131,18 @@ async def _get_signal(
     signal_id: str,
 ) -> TradeSignal | None:
     """
-    Retrieve a signal from the in-memory signal store.
-
-    Returns ``None`` if the signal is not found (already expired / cleaned up).
+    Retrieve a signal from the in-memory signal store (Application bot_data),
+    falling back to the process-wide shared registry.
     """
     signal_store: dict[str, TradeSignal] = context.bot_data.get("signal_store", {})
-    return signal_store.get(signal_id)
+    signal = signal_store.get(signal_id)
+    if signal is not None:
+        return signal
+    try:
+        from telegram_bot.signal_store import get_signal
+        return get_signal(signal_id)
+    except Exception:
+        return None
 
 
 def _is_expired(signal: TradeSignal) -> bool:
@@ -220,8 +226,13 @@ async def handle_approve(
 
     signal = await _get_signal(context, signal_id)
     if signal is None:
+        await query.answer(
+            "Signal not found. Re-send a sample trade while the bot is running.",
+            show_alert=True,
+        )
         await query.edit_message_text(
-            "⚠️ Signal not found or already processed\\.",
+            "⚠️ Signal not found or already processed\\.\n"
+            "The bot must be running when the trade is sent so Approve can resolve it\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -237,6 +248,13 @@ async def handle_approve(
     # Process approval state
     orchestrator = context.bot_data.get("orchestrator")
     order_result: str = "N/A"
+    is_crypto = (
+        str(getattr(signal, "exchange", "")).upper() == "DELTA"
+        or "BTC" in str(signal.symbol).upper()
+        or "ETH" in str(signal.symbol).upper()
+    )
+    currency = "$" if is_crypto else "₹"
+
     if orchestrator is not None:
         try:
             result = await orchestrator.handle_approval(signal_id, "APPROVE")
@@ -245,19 +263,29 @@ async def handle_approve(
             logger.error("handle_approve: orchestrator error: %s", exc)
             order_result = f"Error: {exc}"
     else:
-        order_result = f"PAPER_ORDER_EXECUTED: {signal.quantity} qty @ ₹{signal.entry_price:.2f}"
+        # Paper path — create an open position without a live orchestrator
+        lev = (getattr(signal, "indicators_snapshot", None) or {}).get("leverage")
+        lev_txt = f" @ {float(lev):.0f}x" if lev else ""
+        order_result = (
+            f"PAPER_ORDER_EXECUTED: {signal.quantity} qty @ {currency}{signal.entry_price:.2f}{lev_txt}"
+        )
         try:
-            from api.routes.positions import add_paper_position
+            from api.paper_book import add_paper_position
             add_paper_position(signal)
         except Exception as err:
             logger.error("Failed to add paper position: %s", err)
+            order_result = f"Approved but position record failed: {err}"
 
-    # Update signal status in store
+    # Update signal status in store(s)
     signal_store: dict[str, TradeSignal] = context.bot_data.get("signal_store", {})
+    updated = signal.model_copy(update={"status": SignalStatus.APPROVED})
     if signal_id in signal_store:
-        signal_store[signal_id] = signal.model_copy(
-            update={"status": SignalStatus.APPROVED}
-        )
+        signal_store[signal_id] = updated
+    try:
+        from telegram_bot.signal_store import register_signal
+        register_signal(updated)
+    except Exception:
+        pass
 
     # Edit original message instantly with final status
     trade_id = escape_md(format_trade_id(signal.id))

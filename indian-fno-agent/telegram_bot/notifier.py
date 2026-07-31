@@ -271,6 +271,12 @@ class TelegramNotifier:
         )
 
         keyboard = self._trade_card_keyboard(signal_id)
+        # Register so a running TelegramBot can resolve Approve/Reject callbacks
+        try:
+            from telegram_bot.signal_store import register_signal
+            register_signal(signal)
+        except Exception as exc:
+            logger.warning("Could not register signal for Telegram callbacks: %s", exc)
         return await self._send(text, reply_markup=keyboard)
 
     # ------------------------------------------------------------------

@@ -82,7 +82,9 @@ class TelegramNotifier:
     ) -> None:
         token = bot_token or get_settings().TELEGRAM_BOT_TOKEN
         self._chat_id = int(chat_id or get_settings().TELEGRAM_CHAT_ID)
-        self._bot: Bot = Bot(token=token)
+        from telegram.request import HTTPXRequest
+        req = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0, write_timeout=30.0, pool_timeout=30.0)
+        self._bot: Bot = Bot(token=token, request=req)
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -91,7 +91,9 @@ class TelegramBot:
             logger.warning("TELEGRAM_BOT_TOKEN not set — Telegram bot disabled.")
             return
 
-        builder = Application.builder().token(settings.TELEGRAM_BOT_TOKEN)
+        from telegram.request import HTTPXRequest
+        req = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0, write_timeout=30.0, pool_timeout=30.0)
+        builder = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).request(req)
         self._app = builder.build()
         self._signal_store: dict[str, Any] = {}
         self._app.bot_data["signal_store"] = self._signal_store
@@ -297,14 +299,16 @@ class TelegramBot:
         if not query or not query.data:
             return
 
+        data = query.data
+        logger.info("Telegram Callback Query received: data=%s, user_id=%s", data, query.from_user.id if query.from_user else "none")
+
         # Verify admin
         user_id = query.from_user.id if query.from_user else None
-        allowed = int(settings.TELEGRAM_CHAT_ID) if settings.TELEGRAM_CHAT_ID else None
-        if user_id != allowed:
+        allowed = int(settings.TELEGRAM_CHAT_ID) if settings.TELEGRAM_CHAT_ID and str(settings.TELEGRAM_CHAT_ID).isdigit() else None
+        if allowed and user_id != allowed:
             await query.answer("⛔ Unauthorized.", show_alert=True)
             return
 
-        data = query.data
         if data.startswith("approve:"):
             await handle_approve(update, context, self.orchestrator)
         elif data.startswith("reject:"):

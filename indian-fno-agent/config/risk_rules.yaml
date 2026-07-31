@@ -1,0 +1,99 @@
+# Risk Engine Configuration
+# These are the hard-gated risk rules enforced BEFORE any signal reaches Telegram.
+# Violations result in automatic signal rejection (never reaches you for approval).
+
+# ──────────────────────────────────────────
+# CAPITAL CONFIGURATION
+# ──────────────────────────────────────────
+capital:
+  total_capital: 500000            # ₹5,00,000 — your trading capital
+  max_risk_per_trade_pct: 1.0      # Never risk more than 1% per trade = ₹5,000
+  max_daily_loss_pct: 3.0          # Kill switch at 3% daily loss = ₹15,000
+  max_weekly_loss_pct: 6.0         # Weekly loss guard = ₹30,000
+  max_monthly_loss_pct: 10.0       # Monthly loss guard = ₹50,000
+
+# ──────────────────────────────────────────
+# POSITION LIMITS
+# ──────────────────────────────────────────
+positions:
+  max_open_positions: 5            # Never hold more than 5 simultaneous positions
+  max_positions_per_symbol: 1      # Only 1 position per symbol at a time
+  max_exposure_per_symbol_pct: 20  # Max 20% of capital in any one symbol
+  max_sector_exposure_pct: 40      # Max 40% of capital in any one sector
+  max_index_positions: 3           # Max 3 index-based positions
+  max_stock_positions: 3           # Max 3 stock-based positions
+
+# ──────────────────────────────────────────
+# CONSECUTIVE LOSS PROTECTION
+# ──────────────────────────────────────────
+loss_protection:
+  max_consecutive_losses: 3        # Stop after 3 consecutive losses
+  cooldown_after_losses: 30        # Wait 30 minutes before next signal after 3 losses
+  reduce_size_after_losses: 2      # Reduce position size by 50% after 2 losses
+
+# ──────────────────────────────────────────
+# LIQUIDITY FILTERS
+# ──────────────────────────────────────────
+liquidity:
+  min_option_volume: 1000          # Minimum option contract volume
+  max_bid_ask_spread_pct: 2.0      # Maximum bid-ask spread as % of price
+  min_oi_contracts: 5000           # Minimum open interest in the option contract
+  avoid_illiquid_stocks: true      # Skip stocks not in F&O focus list
+
+# ──────────────────────────────────────────
+# SLIPPAGE & EXECUTION
+# ──────────────────────────────────────────
+execution:
+  slippage_pct: 0.10               # Assumed slippage: 0.1% of trade value
+  max_entry_time: "14:30"          # No new positions after 2:30 PM
+  min_time_to_expiry_days: 1       # Don't trade options expiring today
+  avoid_first_15_min: true         # No trades between 9:15-9:30 AM (volatile open)
+  avoid_last_30_min: false         # Whether to avoid 3:00-3:30 PM (configurable)
+
+# ──────────────────────────────────────────
+# RISK/REWARD MINIMUMS
+# ──────────────────────────────────────────
+risk_reward:
+  min_risk_reward_futures: 1.5     # Minimum R:R for futures trades
+  min_risk_reward_options_buy: 1.5  # Minimum R:R for options buying
+  min_risk_reward_options_sell: 0.5 # R:R for options selling (premium collected vs max loss)
+  max_stop_loss_pct: 5.0           # Maximum stop loss as % of entry price
+
+# ──────────────────────────────────────────
+# CONFIDENCE THRESHOLDS
+# ──────────────────────────────────────────
+confidence:
+  min_confidence_futures: 0.60     # 60% minimum for futures signals
+  min_confidence_options_buy: 0.65 # 65% for options buying
+  min_confidence_options_sell: 0.80 # 80% for options selling (high risk)
+
+# ──────────────────────────────────────────
+# KILL SWITCH
+# ──────────────────────────────────────────
+kill_switch:
+  auto_activate_on_daily_loss: true
+  auto_activate_threshold_pct: 3.0  # Same as max_daily_loss_pct
+  manual_commands:                  # Telegram commands for manual control
+    activate: "/killswitch"
+    deactivate: "/resume"
+  notify_on_activation: true
+  auto_close_positions_on_kill: false  # Whether to auto-close on kill switch
+  require_confirmation_to_resume: true # Ask "confirm resume?" before deactivating
+
+# ──────────────────────────────────────────
+# NEWS/EVENT BLOCKING
+# ──────────────────────────────────────────
+event_blocking:
+  block_before_major_events_hours: 2   # Block 2h before RBI, Budget, etc.
+  block_after_major_events_hours: 1    # Block 1h after major events
+  severity_to_block: [HIGH, CRITICAL]  # Which severity levels trigger block
+  allow_override_in_config: false       # Can strategies override event block?
+
+# ──────────────────────────────────────────
+# PAPER TRADING
+# ──────────────────────────────────────────
+paper_trading:
+  virtual_capital: 500000          # Starting virtual capital
+  simulate_slippage: true
+  simulate_impact_cost: true
+  log_all_paper_trades: true

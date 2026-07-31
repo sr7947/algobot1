@@ -1,0 +1,130 @@
+# Strategy Engine Configuration
+# Each strategy can be enabled/disabled and tuned via this file.
+# Changes here take effect without code changes.
+
+strategies:
+  trend_breakout:
+    enabled: true
+    version: "1.0.0"
+    description: "Breakout above 20-day high with trend confirmation"
+    supported_instruments: [FUT]
+    primary_timeframe: "15m"
+    confirmation_timeframes: ["1h", "1d"]
+    watchlist:
+      - NIFTY
+      - BANKNIFTY
+      - RELIANCE
+      - HDFC
+      - TCS
+      - INFY
+    parameters:
+      breakout_lookback_days: 20
+      volume_multiplier: 1.5       # Volume must be X times average
+      adx_threshold: 25            # ADX minimum for trending confirmation
+      rsi_min: 50
+      rsi_max: 70
+      ema_stack_required: true     # EMA 9 > 21 > 50 > 200
+      risk_reward_min: 2.0
+      max_atr_stop: 3.0            # SL cannot be more than 3 ATR
+    confidence_weights:
+      breakout_confirmed: 0.25
+      volume_confirmed: 0.20
+      adx_strong: 0.15
+      ema_stack: 0.20
+      rsi_momentum: 0.10
+      vwap_above: 0.10
+    min_confidence: 0.65
+
+  vwap_rsi_reversal:
+    enabled: true
+    version: "1.0.0"
+    description: "Intraday mean reversion to VWAP using RSI divergence"
+    supported_instruments: [FUT, CE, PE]
+    primary_timeframe: "5m"
+    confirmation_timeframes: ["15m"]
+    watchlist:
+      - NIFTY
+      - BANKNIFTY
+    parameters:
+      vwap_deviation_pct: 0.5      # Min deviation from VWAP to trigger
+      rsi_oversold: 35
+      rsi_overbought: 65
+      volume_spike_multiplier: 2.0
+      regime_filter: [RANGE_BOUND, REVERSAL]
+      entry_time_start: "09:30"   # Don't enter before 9:30 AM
+      entry_time_end: "14:30"     # Don't enter after 2:30 PM
+    confidence_weights:
+      vwap_deviation: 0.25
+      rsi_signal: 0.25
+      macd_confirmation: 0.20
+      volume_spike: 0.15
+      support_proximity: 0.15
+    min_confidence: 0.60
+
+  options_momentum:
+    enabled: true
+    version: "1.0.0"
+    description: "Buy ATM/OTM options on strong directional moves"
+    supported_instruments: [CE, PE]
+    primary_timeframe: "15m"
+    confirmation_timeframes: ["1h"]
+    watchlist:
+      - NIFTY
+      - BANKNIFTY
+      - FINNIFTY
+    parameters:
+      underlying_move_pct: 0.5     # Minimum underlying move to trigger
+      pcr_bullish_below: 0.80
+      pcr_bearish_above: 1.20
+      iv_rank_max: 50              # Only buy when IV is cheap (below 50th percentile)
+      strike_selection: "atm+1"    # ATM or 1 strike OTM
+      max_entry_time: "14:00"      # No entries after 2 PM
+      stop_loss_pct: 30            # 30% loss on premium
+      target_pct: 50               # 50% gain on premium
+      dte_min: 1                   # Minimum days to expiry
+      dte_max: 7                   # Maximum days to expiry
+    confidence_weights:
+      underlying_momentum: 0.30
+      oi_confirmation: 0.25
+      pcr_signal: 0.20
+      iv_rank: 0.15
+      time_filter: 0.10
+    min_confidence: 0.65
+
+  short_premium:
+    enabled: false   # DISABLED by default - high risk, enable only for experienced traders
+    version: "1.0.0"
+    description: "Sell OTM options when IV is high and market is range-bound"
+    supported_instruments: [CE, PE]
+    primary_timeframe: "1d"
+    watchlist:
+      - NIFTY
+      - BANKNIFTY
+    parameters:
+      iv_rank_min: 70              # Only sell when IV is expensive (above 70th percentile)
+      adx_max: 20                  # Range-bound market only
+      pcr_min: 0.80                # Not strongly directional
+      pcr_max: 1.20
+      dte_min: 5
+      dte_max: 15
+      strikes_otm: 2               # Sell 2 strikes away from ATM
+      stop_loss_premium_multiplier: 2.0   # Exit if premium doubles
+      target_premium_pct: 50       # Take profit at 50% of premium received
+    confidence_weights:
+      iv_rank_high: 0.30
+      range_bound: 0.30
+      no_events: 0.25
+      pcr_neutral: 0.15
+    min_confidence: 0.80           # Very high confidence required for selling options
+
+# Ensemble decision configuration
+ensemble:
+  weights:
+    regime_agent: 0.20
+    technical_agent: 0.35
+    options_agent: 0.25
+    news_agent: 0.15
+    risk_arbiter: 1.00             # Final gate, not part of weighted average
+  minimum_ensemble_score: 0.60
+  news_block_overrides_all: true   # If news says blocked window, no signals regardless
+  require_all_agents_green: false  # True = all agents must agree; False = weighted majority

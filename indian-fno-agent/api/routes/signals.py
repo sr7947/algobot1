@@ -439,6 +439,23 @@ async def trigger_sample_signal(
         ]
         news = "Positive FII inflow data; RBI holds rates steady"
 
+    from agents.gemini_reasoner import GeminiReasoningEngine
+
+    reasoner = GeminiReasoningEngine()
+    ai_res = await reasoner.evaluate_trade_signal(
+        symbol=sig_symbol,
+        direction="BUY",
+        entry_price=entry,
+        stop_loss=sl,
+        target=target,
+        technical_indicators={"EMA_Bull_Stack": True, "VWAP_Support": True, "RSI": 62, "Volume": "2.1x"},
+        rationale=rationale,
+        news_summary=news,
+    )
+
+    verdict_badge = f"🤖 Gemini AI Verdict: [{ai_res.get('verdict', 'APPROVE')}]"
+    final_rationale = [verdict_badge] + ai_res.get("ai_rationale", rationale)
+
     signal = TradeSignal(
         id=uuid4(),
         created_at=datetime.now(timezone.utc),
@@ -454,7 +471,7 @@ async def trigger_sample_signal(
         lot_size=qty,
         confidence_score=0.82 if is_crypto else 0.78,
         regime=MarketRegime.TRENDING_BULL.value,
-        rationale=rationale,
+        rationale=final_rationale,
         news_summary=news,
         indicators_snapshot={},
         status=SignalStatus.PENDING_APPROVAL.value,

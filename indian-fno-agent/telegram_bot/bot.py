@@ -71,6 +71,8 @@ class TelegramBot:
         """Register a signal in the bot's signal_store so button callbacks can look it up."""
         signal_id = str(signal.id) if hasattr(signal, "id") else str(signal)
         self._signal_store[signal_id] = signal
+        from telegram_bot.handlers import GLOBAL_SIGNAL_STORE
+        GLOBAL_SIGNAL_STORE[signal_id] = signal
         if self._app and hasattr(self._app, "bot_data"):
             if "signal_store" not in self._app.bot_data:
                 self._app.bot_data["signal_store"] = self._signal_store

@@ -3,6 +3,7 @@ FastAPI application — main entry point for the trading agent REST API.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone

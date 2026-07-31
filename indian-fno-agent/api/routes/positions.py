@@ -15,6 +15,8 @@ POST /positions/{position_id}/modify-sl — adjust stop-loss price
 from __future__ import annotations
 
 import logging
+import os
+import json
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -35,7 +37,29 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/positions", tags=["Positions"])
 
-ACTIVE_PAPER_POSITIONS: List[Dict[str, Any]] = []
+POSITIONS_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "active_positions.json")
+
+
+def load_positions_from_disk() -> List[Dict[str, Any]]:
+    try:
+        if os.path.exists(POSITIONS_FILE):
+            with open(POSITIONS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        logger.warning(f"Could not load positions file: {e}")
+    return []
+
+
+def save_positions_to_disk() -> None:
+    try:
+        os.makedirs(os.path.dirname(POSITIONS_FILE), exist_ok=True)
+        with open(POSITIONS_FILE, "w", encoding="utf-8") as f:
+            json.dump(ACTIVE_PAPER_POSITIONS, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Could not save positions file: {e}")
+
+
+ACTIVE_PAPER_POSITIONS: List[Dict[str, Any]] = load_positions_from_disk()
 
 
 def add_paper_position(signal: Any) -> Dict[str, Any]:
@@ -71,6 +95,7 @@ def add_paper_position(signal: Any) -> Dict[str, Any]:
         "created_at": time.time(),
     }
     ACTIVE_PAPER_POSITIONS.insert(0, pos)
+    save_positions_to_disk()
     return pos
 
 
@@ -119,6 +144,7 @@ async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[
         }
 
     ACTIVE_PAPER_POSITIONS.insert(0, pos)
+    save_positions_to_disk()
     return {"status": "success", "message": f"Position placed for {pos['symbol']}", "position": pos}
 
 
@@ -451,6 +477,7 @@ async def close_position_simple(position_id: str) -> Dict[str, Any]:
             "created_at": time.time(),
         }
         COMPLETED_TRADES.insert(0, trade_record)
+        save_positions_to_disk()
         return {"status": "success", "message": f"Position {closed_pos['symbol']} closed.", "trade": trade_record}
 
     return {"status": "success", "message": "Position closed."}

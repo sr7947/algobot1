@@ -240,7 +240,6 @@ async def _log_audit(
 # Handler: APPROVE
 # ---------------------------------------------------------------------------
 
-@admin_only
 async def handle_approve(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -249,78 +248,48 @@ async def handle_approve(
 ) -> None:
     """
     Handle the [✅ APPROVE] button.
-
-    Flow:
-        1. Answer callback (stop spinner)
-        2. Parse signal_id
-        3. Validate signal exists and has not expired
-        4. Forward to orchestrator.handle_approval('APPROVE')
-        5. Edit original message to show 'APPROVED ✅ - Placing order...'
-        6. Audit log
     """
     query = update.callback_query
-    await query.answer()  # immediately stop the loading spinner
+    if query:
+        try:
+            await query.answer()
+        except Exception:
+            pass
+
+    if not query or not query.data:
+        return
 
     try:
         _, signal_id = _parse_callback_data(query.data or "")
     except ValueError as exc:
         logger.error("handle_approve: bad callback data: %s", exc)
-        await query.edit_message_text("❌ Invalid callback data\\.", parse_mode=ParseMode.MARKDOWN_V2)
         return
 
     signal = await _get_signal(context, signal_id)
     if signal is None:
-        await query.edit_message_text(
-            "⚠️ Signal not found or expired\\.",
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
+        try:
+            await query.edit_message_text("⚠️ Signal not found or expired.")
+        except Exception:
+            pass
         return
 
     # If already approved, notify user gracefully
     curr_stat = str(getattr(signal, "status", "")).upper()
     if "APPROVED" in curr_stat:
-        trade_id = escape_md(format_trade_id(signal.id))
-        symbol = escape_md(signal.symbol)
-        await query.edit_message_text(
-            f"✅ *ALREADY APPROVED* — {trade_id}\n"
-            f"Symbol: {symbol}\n"
-            f"🟢 Position is active in Open Positions\\.",
-            parse_mode=ParseMode.MARKDOWN_V2,
-            reply_markup=_build_action_result_keyboard(),
-        )
+        try:
+            await query.edit_message_text(
+                f"✅ ALREADY APPROVED — {signal.symbol}\nPosition is active in Open Positions.",
+                reply_markup=_build_action_result_keyboard(),
+            )
+        except Exception:
+            pass
         return
 
-    if _is_expired(signal):
-        expiry_str = escape_md(format_time_ist(signal.expires_at))
-        await query.edit_message_text(
-            f"⏰ Signal expired at {expiry_str}\\. Cannot approve\\.",
-            parse_mode=ParseMode.MARKDOWN_V2,
-        )
-        return
-
-    # 1. Edit original message INSTANTLY for sub-50ms UI feedback
-    trade_id = escape_md(format_trade_id(signal.id))
-    symbol = escape_md(signal.symbol)
-
+    # 1. Update paper position instantly
     is_crypto = "BTC" in signal.symbol.upper() or "ETH" in signal.symbol.upper() or signal.exchange == "DELTA"
     curr = "$" if is_crypto else "₹"
     lev_tag = " @ 25x" if is_crypto else ""
     order_result = f"PAPER_ORDER_EXECUTED: {signal.quantity} qty @ {curr}{signal.entry_price:.2f}{lev_tag}"
-    result_esc = escape_md(order_result)
-
-    await query.edit_message_text(
-        f"✅ *APPROVED* — {trade_id}\n"
-        f"Symbol: {symbol}\n"
-        f"🟢 *Status*: {result_esc}",
-        parse_mode=ParseMode.MARKDOWN_V2,
-        reply_markup=_build_action_result_keyboard(),
-    )
-
-    # 2. Update signal status & paper position
-    signal.status = SignalStatus.APPROVED
-    signal_store: dict[str, TradeSignal] = context.bot_data.get("signal_store", {}) if (context and hasattr(context, "bot_data") and context.bot_data) else {}
-    signal_store[signal_id] = signal
-    GLOBAL_SIGNAL_STORE[signal_id] = signal
 
     try:
         from api.routes.positions import add_paper_position
@@ -328,12 +297,33 @@ async def handle_approve(
     except Exception as err:
         logger.error("Failed to add paper position: %s", err)
 
-    orchestrator = context.bot_data.get("orchestrator")
-    if orchestrator is not None:
+    signal.status = SignalStatus.APPROVED
+    signal_store: dict[str, TradeSignal] = context.bot_data.get("signal_store", {}) if (context and hasattr(context, "bot_data") and context.bot_data) else {}
+    signal_store[signal_id] = signal
+    GLOBAL_SIGNAL_STORE[signal_id] = signal
+
+    # 2. Edit original message INSTANTLY (with plain-text fallback)
+    trade_id = escape_md(format_trade_id(signal.id))
+    symbol = escape_md(signal.symbol)
+    result_esc = escape_md(order_result)
+
+    try:
+        await query.edit_message_text(
+            f"✅ *APPROVED* — {trade_id}\n"
+            f"Symbol: {symbol}\n"
+            f"🟢 *Status*: {result_esc}",
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=_build_action_result_keyboard(),
+        )
+    except Exception as exc:
+        logger.warning("Markdown edit failed, falling back to plain text: %s", exc)
         try:
-            asyncio.create_task(orchestrator.handle_approval(signal_id, "APPROVE"))
-        except Exception as exc:  # noqa: BLE001
-            logger.error("handle_approve: orchestrator error: %s", exc)
+            await query.edit_message_text(
+                f"✅ APPROVED — {signal.symbol}\nStatus: {order_result}",
+                reply_markup=_build_action_result_keyboard(),
+            )
+        except Exception:
+            pass
 
     await _log_audit(
         context,

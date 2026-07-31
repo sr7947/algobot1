@@ -127,9 +127,32 @@ async def _handle_callback_query(bot, query: dict) -> None:
     if signal is None:
         await bot.answer_callback_query(
             cq_id,
-            text="Signal not found. Re-send sample while this bot is running.",
+            text="Signal not found. Stop other bot pollers, then request a new trade.",
             show_alert=True,
         )
+        if chat_id and message_id:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=(
+                    "⚠️ Signal not found\n"
+                    "Another bot instance likely handled this button without the signal.\n"
+                    "Stop all other bots on this token, then ask for a new trade."
+                ),
+                reply_markup=InlineKeyboardMarkup([]),
+            )
+        return
+
+    status_val = str(getattr(signal, "status", "") or "")
+    if status_val in ("APPROVED", "REJECTED", "EXECUTED"):
+        await bot.answer_callback_query(cq_id, text=f"Already {status_val}.", show_alert=True)
+        if chat_id and message_id:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=f"ℹ️ Signal already {status_val} — no action taken.",
+                reply_markup=InlineKeyboardMarkup([]),
+            )
         return
 
     await bot.answer_callback_query(cq_id)

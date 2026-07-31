@@ -226,14 +226,42 @@ async def handle_approve(
 
     signal = await _get_signal(context, signal_id)
     if signal is None:
+        # Final disk reload in case another process registered it after bot start
+        try:
+            from telegram_bot.signal_store import get_signal, get_signal_store
+            get_signal_store()  # force disk load
+            signal = get_signal(signal_id)
+        except Exception:
+            signal = None
+
+    if signal is None:
         await query.answer(
-            "Signal not found. Re-send a sample trade while the bot is running.",
+            "Signal not found. Send a new trade while THIS bot is the only poller.",
             show_alert=True,
         )
         await query.edit_message_text(
-            "⚠️ Signal not found or already processed\\.\n"
-            "The bot must be running when the trade is sent so Approve can resolve it\\.",
+            "⚠️ *Signal not found*\n"
+            "This usually means another bot instance handled the button, "
+            "or the proposal was sent without a registered signal\\.\n\n"
+            "Fix: stop all other bots using this token, then send a new trade\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    # Already decided?
+    status_val = str(getattr(signal, "status", "") or "")
+    if status_val in (
+        SignalStatus.APPROVED.value,
+        SignalStatus.REJECTED.value,
+        "APPROVED",
+        "REJECTED",
+        "EXECUTED",
+    ):
+        await query.answer(f"Already {status_val}.", show_alert=True)
+        await query.edit_message_text(
+            f"ℹ️ Signal already *{escape_md(status_val)}* — no action taken\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=_build_action_result_keyboard(),
         )
         return
 

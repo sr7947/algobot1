@@ -66,16 +66,18 @@ export default function SettingsPage() {
       {/* Delta Crypto Leverage */}
       <div className="glass-card p-6">
         <h3 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2">
-          <Coins className="w-4 h-4 text-yellow-400" /> Delta Crypto Default Leverage
+          <Coins className="w-4 h-4 text-yellow-400" /> Delta India Default Leverage
         </h3>
         <p className="text-xs text-gray-500 mb-3">
-          Order leverage applied on Delta Exchange before placing crypto futures orders.
-          Default is <span className="text-yellow-400 font-medium">25x</span> (initial margin ≈ 4% of notional).
+          Matches Delta Exchange India Isolated Margin formulas.
+          Default order leverage is <span className="text-yellow-400 font-medium">25x</span>
+          {' '}→ Initial Margin% = max(100/25, product min) = <span className="text-yellow-400 font-medium">4%</span>.
+          Order Margin = size × contract_value × price × (IM%/100).
           Change via <code className="text-gray-400">DELTA_DEFAULT_LEVERAGE</code> in .env and restart.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Default Leverage (x)</label>
+            <label className="block text-xs text-gray-400 mb-1">Default Order Leverage (x)</label>
             <input
               type="text"
               defaultValue="25"
@@ -84,10 +86,10 @@ export default function SettingsPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Initial Margin Fraction</label>
+            <label className="block text-xs text-gray-400 mb-1">Initial Margin % (at 25x)</label>
             <input
               type="text"
-              defaultValue="4% (1/25)"
+              defaultValue="4%  (= 100 / 25)"
               readOnly
               className="w-full px-3 py-2 rounded-lg bg-navy-900 border border-gray-700 text-sm text-gray-200 focus:outline-none"
             />
@@ -96,7 +98,7 @@ export default function SettingsPage() {
         {isCrypto && (
           <div className="mt-3 flex items-center gap-2 text-xs text-yellow-400 bg-yellow-500/10 px-3 py-2 rounded-lg">
             <Coins className="w-3.5 h-3.5" />
-            Crypto mode active — new Delta orders use 25x leverage by default.
+            Crypto mode — new Delta orders use 25x order leverage; position leverage = value / (margin + UPNL).
           </div>
         )}
       </div>

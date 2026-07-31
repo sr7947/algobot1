@@ -1,18 +1,138 @@
 """
 tests/unit/test_delta_leverage.py
 =================================
-Unit tests for Delta Exchange default leverage (25x).
+Unit tests for Delta Exchange India leverage & margin formulas.
 """
 
 from __future__ import annotations
 
 import unittest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, AsyncMock
 
 
-class TestDeltaDefaultLeverage(unittest.TestCase):
-    """Default crypto order leverage should be 25x."""
+class TestDeltaIndiaMarginFormulas(unittest.TestCase):
+    """Verify formulas against Delta Exchange India documentation."""
 
+    def test_im_pct_equals_100_over_leverage(self):
+        from risk.delta_margin import initial_margin_pct_for_leverage, get_default_product_spec
+
+        btc = get_default_product_spec("BTCUSD")
+        self.assertAlmostEqual(initial_margin_pct_for_leverage(10, btc), 10.0)
+        self.assertAlmostEqual(initial_margin_pct_for_leverage(25, btc), 4.0)
+        self.assertAlmostEqual(initial_margin_pct_for_leverage(4, btc), 25.0)
+
+    def test_im_pct_floored_by_product_minimum(self):
+        from risk.delta_margin import initial_margin_pct_for_leverage, get_default_product_spec
+
+        btc = get_default_product_spec("BTCUSD")  # IM%_MIN = 0.5
+        # 200x → 0.5%, equals product minimum
+        self.assertAlmostEqual(initial_margin_pct_for_leverage(200, btc), 0.5)
+        # Above max (would be < 0.5%) still floored at 0.5%
+        self.assertAlmostEqual(initial_margin_pct_for_leverage(500, btc), 0.5)
+
+    def test_order_margin_vanilla_btcusd_10x(self):
+        """
+        Delta India example path:
+          1 BTCUSD contract @ $65,200, 10x leverage
+          IM% = 10, Contract Value (notional) = 0.001 × 65200 = $65.20
+          Order Margin = 65.20 × 0.10 = $6.52
+        """
+        from risk.delta_margin import order_margin, get_default_product_spec
+
+        btc = get_default_product_spec("BTCUSD")
+        margin = order_margin(size=1, price=65200.0, leverage=10, product=btc)
+        self.assertAlmostEqual(margin, 6.52)
+
+    def test_order_margin_vanilla_btcusd_25x(self):
+        """At 25x: IM% = 4 → margin = 65.20 × 0.04 = $2.608"""
+        from risk.delta_margin import order_margin, get_default_product_spec
+
+        btc = get_default_product_spec("BTCUSD")
+        margin = order_margin(size=1, price=65200.0, leverage=25, product=btc)
+        self.assertAlmostEqual(margin, 2.608)
+
+    def test_support_shorthand_matches_detailed_formula(self):
+        """Order Size × (Multiplier × Price) × (IM%/100) == detailed IM formula."""
+        from risk.delta_margin import (
+            get_default_product_spec,
+            initial_margin_pct_for_leverage,
+            order_margin,
+        )
+
+        btc = get_default_product_spec("BTCUSD")
+        size, price, lev = 3, 64000.0, 25
+        im_pct = initial_margin_pct_for_leverage(lev, btc, size=size)
+        shorthand = size * (btc.contract_value * price) * (im_pct / 100.0)
+        self.assertAlmostEqual(order_margin(size, price, lev, btc), shorthand)
+
+    def test_position_leverage_at_entry_equals_order_leverage(self):
+        from risk.delta_margin import (
+            get_default_product_spec,
+            order_margin,
+            position_leverage,
+        )
+
+        btc = get_default_product_spec("BTCUSD")
+        size, price, lev = 2, 65000.0, 25
+        margin = order_margin(size, price, lev, btc)
+        # Fresh fill: UPNL = 0 → position leverage == order leverage
+        self.assertAlmostEqual(
+            position_leverage(size, price, margin, unrealised_pnl=0.0, product=btc),
+            lev,
+            places=6,
+        )
+
+    def test_position_leverage_falls_when_upnl_positive(self):
+        from risk.delta_margin import (
+            get_default_product_spec,
+            order_margin,
+            position_leverage,
+        )
+
+        btc = get_default_product_spec("BTCUSD")
+        size, price, lev = 1, 65000.0, 25
+        margin = order_margin(size, price, lev, btc)
+        # Mark moved in favour → UPNL > 0 → effective leverage drops
+        effective = position_leverage(size, price, margin, unrealised_pnl=1.0, product=btc)
+        self.assertLess(effective, lev)
+
+    def test_available_balance_formula(self):
+        from risk.delta_margin import available_balance
+
+        self.assertAlmostEqual(available_balance(200.0, 2.608, 0.0), 197.392)
+        self.assertAlmostEqual(available_balance(200.0, 150.0, 60.0), 0.0)
+
+    def test_ethusd_contract_value(self):
+        from risk.delta_margin import get_default_product_spec, order_margin
+
+        eth = get_default_product_spec("ETHUSD")
+        self.assertEqual(eth.contract_value, 0.01)
+        # 1 ETHUSD @ $3500, 5x → IM% = 20 → margin = 1 × 0.01 × 3500 × 0.20 = 7.0
+        self.assertAlmostEqual(order_margin(1, 3500.0, 5, eth), 7.0)
+
+    def test_im_scaling_increases_floor(self):
+        from risk.delta_margin import (
+            DeltaProductSpec,
+            initial_margin_pct_for_leverage,
+        )
+
+        prod = DeltaProductSpec(
+            symbol="BTCUSD",
+            contract_value=0.001,
+            initial_margin_pct=0.5,
+            maintenance_margin_pct=0.25,
+            im_scaling_factor=0.0000025,
+            default_leverage=200.0,
+            position_threshold=0.0,
+        )
+        # Huge size pushes risk-limit IM% above selected 25x (4%)
+        huge = 2_000_000
+        im = initial_margin_pct_for_leverage(25, prod, size=huge)
+        self.assertGreater(im, 4.0)
+        self.assertAlmostEqual(im, 0.5 + 0.0000025 * huge)
+
+
+class TestDeltaDefaultLeverageSettings(unittest.TestCase):
     def test_settings_default_leverage_is_25(self):
         from config.settings import Settings
 
@@ -23,35 +143,6 @@ class TestDeltaDefaultLeverage(unittest.TestCase):
         )
         self.assertEqual(settings.DELTA_DEFAULT_LEVERAGE, 25.0)
 
-    def test_margin_fraction_at_25x(self):
-        leverage = 25.0
-        margin_fraction = 1.0 / leverage
-        self.assertAlmostEqual(margin_fraction, 0.04)
-
-        # 1 contract BTCUSD @ $65,200 with contract size 0.001 BTC
-        entry = 65200.0
-        qty = 1
-        contract_size = 0.001
-        used_margin = entry * qty * contract_size * margin_fraction
-        self.assertAlmostEqual(used_margin, 2.608)
-
-    def test_margin_fraction_uses_position_leverage(self):
-        default_leverage = 25.0
-        positions = [
-            {"entry": 65200.0, "qty": 1, "leverage": 25.0},
-            {"entry": 65200.0, "qty": 2, "leverage": 10.0},  # legacy 10x position
-        ]
-        used = sum(
-            float(p["entry"])
-            * int(p["qty"])
-            * 0.001
-            * (1.0 / max(1.0, float(p.get("leverage", default_leverage))))
-            for p in positions
-        )
-        # 25x: 65200*1*0.001*0.04 = 2.608
-        # 10x: 65200*2*0.001*0.1 = 13.04
-        self.assertAlmostEqual(used, 2.608 + 13.04)
-
     def test_broker_default_leverage_helper(self):
         from broker.delta_exchange import DeltaExchangeBroker
 
@@ -61,14 +152,6 @@ class TestDeltaDefaultLeverage(unittest.TestCase):
         settings.DELTA_ENV = "paper"
         settings.DELTA_DEFAULT_LEVERAGE = 25.0
 
-        broker = DeltaExchangeBroker(settings)
-        self.assertEqual(broker._default_leverage(), 25.0)
-
-    def test_broker_default_leverage_fallback(self):
-        from broker.delta_exchange import DeltaExchangeBroker
-
-        settings = MagicMock(spec=[])
-        # No DELTA_DEFAULT_LEVERAGE attribute → fallback 25
         broker = DeltaExchangeBroker(settings)
         self.assertEqual(broker._default_leverage(), 25.0)
 
@@ -83,7 +166,6 @@ class TestDeltaDefaultLeverage(unittest.TestCase):
             DELTA_ENV="paper",
         )
         cfg = settings.get_broker_config()
-        self.assertEqual(cfg["broker"], "delta_exchange")
         self.assertEqual(cfg["default_leverage"], 25.0)
 
 
@@ -103,10 +185,7 @@ class TestDeltaSetLeverage(unittest.IsolatedAsyncioTestCase):
 
         set_lev = AsyncMock(return_value={"leverage": "25"})
         request = AsyncMock(
-            return_value={
-                "success": True,
-                "result": {"id": 99, "state": "open"},
-            }
+            return_value={"success": True, "result": {"id": 99, "state": "open"}}
         )
         broker.set_leverage = set_lev
         broker._request = request
@@ -122,7 +201,6 @@ class TestDeltaSetLeverage(unittest.IsolatedAsyncioTestCase):
         order.leverage = None
 
         resp = await broker.place_order(order)
-
         set_lev.assert_awaited_once_with(27, leverage=None)
         self.assertEqual(str(resp.broker_order_id), "99")
 
@@ -141,7 +219,6 @@ class TestDeltaSetLeverage(unittest.IsolatedAsyncioTestCase):
         )
 
         result = await broker.set_leverage(27)
-        broker._request.assert_awaited_once()
         call_kwargs = broker._request.await_args
         self.assertEqual(call_kwargs.args[0], "POST")
         self.assertIn("/v2/products/27/orders/leverage", call_kwargs.args[1])

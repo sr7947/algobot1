@@ -171,9 +171,10 @@ class Settings(BaseSettings):
         ge=1.0,
         le=200.0,
         description=(
-            "Default order leverage for Delta Exchange crypto futures (e.g. 25 → 25x). "
+            "Default order leverage for Delta Exchange India crypto futures (e.g. 25 → 25x). "
             "Applied via POST /v2/products/{product_id}/orders/leverage before placing orders. "
-            "Initial margin ≈ notional / leverage."
+            "Initial Margin% = max(100/leverage, product.initial_margin); "
+            "Order Margin = size × contract_value × price × (IM%/100)."
         ),
     )
 

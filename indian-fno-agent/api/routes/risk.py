@@ -483,29 +483,44 @@ async def get_live_margins(
         _MARGINS_CACHE_TIME = now
         return res
 
-    # CRYPTO Mode
+    # CRYPTO Mode — Delta Exchange India Isolated Margin formulas
+    # IM = (IM%/100) × size × contract_value × price
+    # IM% = max(100/leverage, product.initial_margin)
+    # Available = Wallet − (Position Margin + Order Margin)
     from api.routes.positions import ACTIVE_PAPER_POSITIONS
+    from risk.delta_margin import (
+        available_balance,
+        estimate_position_margin,
+        get_default_product_spec,
+        initial_margin_pct_for_leverage,
+    )
+
     crypto_positions = [p for p in ACTIVE_PAPER_POSITIONS if p.get("asset_class") == "CRYPTO"]
 
-    # Delta Exchange: 1 contract = 0.001 BTC. Initial margin ≈ notional / leverage.
-    # Default leverage is 25x (configurable via DELTA_DEFAULT_LEVERAGE).
     try:
         from config.settings import get_settings
         default_leverage = float(get_settings().DELTA_DEFAULT_LEVERAGE)
     except Exception:
         default_leverage = 25.0
     default_leverage = max(1.0, default_leverage)
-    margin_fraction = 1.0 / default_leverage  # e.g. 25x → 4% of notional
 
-    used_m = sum(
-        float(p.get("entry", 65200.0))
-        * int(p.get("qty", 1))
-        * 0.001
-        * (1.0 / max(1.0, float(p.get("leverage", default_leverage))))
-        for p in crypto_positions
-    )
+    btc_spec = get_default_product_spec("BTCUSD")
+    im_pct = initial_margin_pct_for_leverage(default_leverage, btc_spec)
+    margin_fraction = im_pct / 100.0  # e.g. 25x → 4%
+
+    used_m = 0.0
+    for p in crypto_positions:
+        sym = str(p.get("symbol", "BTCUSD"))
+        lev = float(p.get("leverage", default_leverage) or default_leverage)
+        used_m += estimate_position_margin(
+            size=float(p.get("qty", 1)),
+            entry_price=float(p.get("entry", 65200.0)),
+            leverage=lev,
+            symbol=sym,
+        )
+
     tot_bal = 200.00
-    avail_m = max(0.0, tot_bal - used_m)
+    avail_m = available_balance(tot_bal, used_m, order_margin_total=0.0)
 
     broker = getattr(request.app.state, "broker", None)
     if broker and getattr(broker, "_authenticated", False):
@@ -515,7 +530,7 @@ async def get_live_margins(
             avail_m = round(float(m.available_margin), 2)
             used_m = round(float(m.used_margin), 2)
         except Exception:
-            avail_m = max(0.0, round(tot_bal - used_m, 2))
+            avail_m = available_balance(tot_bal, used_m)
 
     res = {
         "status": "success",
@@ -526,7 +541,10 @@ async def get_live_margins(
         "available_margin": avail_m,
         "used_margin": round(used_m, 2),
         "default_leverage": default_leverage,
+        "initial_margin_pct": round(im_pct, 6),
         "margin_fraction": round(margin_fraction, 6),
+        "contract_value": btc_spec.contract_value,
+        "formula": "IM = (IM%/100) × size × contract_value × price; IM% = max(100/leverage, product.initial_margin)",
     }
     _MARGINS_CACHE[cache_key] = res
     _MARGINS_CACHE_TIME = now

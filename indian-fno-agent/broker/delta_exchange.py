@@ -76,6 +76,7 @@ class DeltaExchangeBroker(IBrokerAdapter):
         self._products_cache: Dict[str, Dict[str, Any]] = {}
         self._product_id_map: Dict[str, int] = {}
         self._symbol_map: Dict[int, str] = {}
+        self._product_specs: Dict[str, Any] = {}
 
         self._client: Optional[httpx.AsyncClient] = None
 
@@ -264,8 +265,19 @@ class DeltaExchangeBroker(IBrokerAdapter):
             self._products_cache[symbol] = prod
             self._product_id_map[symbol] = prod_id
             self._symbol_map[prod_id] = symbol
+            try:
+                from risk.delta_margin import product_spec_from_dict
+                self._product_specs[symbol] = product_spec_from_dict(symbol, prod)
+            except Exception:
+                pass
 
         return instruments
+
+    def get_product_spec(self, symbol: str) -> Any:
+        """Return cached DeltaProductSpec for symbol (or baked-in default)."""
+        from risk.delta_margin import get_default_product_spec
+
+        return self._product_specs.get(symbol) or get_default_product_spec(symbol)
 
     async def get_ltp(self, tokens: List[str], exchange: Exchange = Exchange.NSE) -> Dict[str, float]:
         """Fetch live ticker prices for requested symbols."""

@@ -76,7 +76,22 @@ def add_paper_position(signal: Any) -> Dict[str, Any]:
             default_leverage = float(get_settings().DELTA_DEFAULT_LEVERAGE)
         except Exception:
             default_leverage = 25.0
-        pos["leverage"] = float(getattr(signal, "leverage", default_leverage) or default_leverage)
+        from risk.delta_margin import (
+            estimate_position_margin,
+            get_default_product_spec,
+            position_leverage,
+            position_notional,
+        )
+
+        lev = float(getattr(signal, "leverage", default_leverage) or default_leverage)
+        spec = get_default_product_spec(symbol)
+        margin = estimate_position_margin(size=qty, entry_price=entry, leverage=lev, product=spec)
+        pos["leverage"] = lev
+        pos["margin"] = margin
+        pos["notional"] = position_notional(qty, entry, spec)
+        pos["position_leverage"] = position_leverage(
+            qty, entry, margin, unrealised_pnl=0.0, product=spec
+        )
     ACTIVE_PAPER_POSITIONS.insert(0, pos)
     return pos
 
@@ -94,7 +109,22 @@ async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[
             default_leverage = float(get_settings().DELTA_DEFAULT_LEVERAGE)
         except Exception:
             default_leverage = 25.0
+        from risk.delta_margin import (
+            estimate_position_margin,
+            get_default_product_spec,
+            position_leverage,
+            position_notional,
+        )
+
         leverage = float(payload.get("leverage", default_leverage) or default_leverage)
+        entry = float(payload.get("entry", 65200.00))
+        qty = int(payload.get("qty", 1))
+        current = float(payload.get("current", 65420.00))
+        pnl = float(payload.get("pnl", current - entry))  # 1 contract × $1 move ≈ per-contract USD later
+        spec = get_default_product_spec("BTCUSD")
+        # Vanilla PnL for display: size × contract_value × (mark − entry)
+        pnl = qty * spec.contract_value * (current - entry)
+        margin = estimate_position_margin(size=qty, entry_price=entry, leverage=leverage, product=spec)
         pos = {
             "id": f"btc-{int(time.time())}",
             "symbol": "BTCUSD",
@@ -102,14 +132,19 @@ async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[
             "asset_class": "CRYPTO",
             "expiry": "Perpetual",
             "direction": str(payload.get("direction", "BUY")),
-            "qty": int(payload.get("qty", 1)),
+            "qty": qty,
             "leverage": leverage,
-            "entry": 65200.00,
-            "current": 65420.00,
-            "pnl": 220.00,
+            "margin": margin,
+            "notional": position_notional(qty, entry, spec),
+            "position_leverage": position_leverage(
+                qty, current, margin, unrealised_pnl=pnl, product=spec
+            ),
+            "entry": entry,
+            "current": current,
+            "pnl": round(pnl, 4),
             "sl": 63500.00,
             "target": 68600.00,
-            "trailingSl": 65200.00,
+            "trailingSl": entry,
             "time": "Just now",
             "created_at": time.time(),
         }
@@ -363,10 +398,34 @@ async def list_positions_raw(asset_class: Optional[str] = Query(None)) -> Dict[s
             # Market is closed (after 3:30 PM IST) — freeze at 3:30 PM closing level
             current_price = float(pos.get("frozen_price", pos.get("current", entry)))
 
-        pnl = round((current_price - entry) * qty, 2)
         p = dict(pos)
         p["asset_class"] = pos_class
         p["current"] = current_price
+
+        if pos_class == "CRYPTO":
+            from risk.delta_margin import (
+                estimate_position_margin,
+                get_default_product_spec,
+                position_leverage,
+                position_notional,
+            )
+
+            spec = get_default_product_spec(sym or "BTCUSD")
+            # Vanilla USD PnL: size × contract_value × (mark − entry)
+            direction = 1.0 if str(pos.get("direction", "BUY")).upper() in ("BUY", "LONG") else -1.0
+            pnl = round(direction * qty * spec.contract_value * (current_price - entry), 4)
+            lev = float(pos.get("leverage", 25.0) or 25.0)
+            margin = float(pos.get("margin") or estimate_position_margin(qty, entry, lev, product=spec))
+            p["margin"] = round(margin, 4)
+            p["notional"] = round(position_notional(qty, current_price, spec), 4)
+            p["leverage"] = lev
+            p["position_leverage"] = round(
+                position_leverage(qty, current_price, margin, unrealised_pnl=pnl, product=spec),
+                4,
+            )
+        else:
+            pnl = round((current_price - entry) * qty, 2)
+
         p["pnl"] = pnl
         p["market_status"] = "OPEN 24/7" if pos_class == "CRYPTO" else ("OPEN" if market_open else "CLOSED")
         p["time"] = ("Just now" if (now - float(pos.get("created_at", now))) < 60 else f"{int((now - float(pos.get('created_at', now))) // 60)} min")

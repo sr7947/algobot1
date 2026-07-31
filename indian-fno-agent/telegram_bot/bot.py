@@ -130,11 +130,21 @@ class TelegramBot:
             BotCommand("help", "All commands"),
         ])
 
-        # Start polling
-        await self._app.initialize()
-        await self._app.start()
-        await self._app.updater.start_polling(drop_pending_updates=True)
-        logger.info("Telegram bot started (polling mode).")
+        # Start polling with conflict safety
+        try:
+            await self._app.initialize()
+            await self._app.start()
+            try:
+                await self._app.bot.delete_webhook(drop_pending_updates=True)
+            except Exception:
+                pass
+            await self._app.updater.start_polling(drop_pending_updates=True)
+            logger.info("Telegram bot started (polling mode).")
+        except Exception as exc:
+            if "Conflict" in str(exc) or "terminated by other getUpdates" in str(exc):
+                logger.warning("Telegram Bot Conflict: another bot instance is active. Uvicorn web server running smoothly.")
+            else:
+                logger.error("Failed to start Telegram bot polling: %s", exc)
 
     async def stop(self) -> None:
         """Gracefully stop the bot."""

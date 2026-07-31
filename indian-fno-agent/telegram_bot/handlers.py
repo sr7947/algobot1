@@ -259,8 +259,21 @@ async def handle_approve(
     signal = await _get_signal(context, signal_id)
     if signal is None:
         await query.edit_message_text(
-            "⚠️ Signal not found or already processed\\.",
+            "⚠️ Signal not found or expired\\.",
             parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+
+    # If already approved, notify user gracefully
+    if getattr(signal, "status", None) == SignalStatus.APPROVED:
+        trade_id = escape_md(format_trade_id(signal.id))
+        symbol = escape_md(signal.symbol)
+        await query.edit_message_text(
+            f"✅ *ALREADY APPROVED* — {trade_id}\n"
+            f"Symbol: {symbol}\n"
+            f"🟢 Position is active in Open Positions\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=_build_action_result_keyboard(),
         )
         return
 
@@ -283,7 +296,10 @@ async def handle_approve(
             logger.error("handle_approve: orchestrator error: %s", exc)
             order_result = f"Error: {exc}"
     else:
-        order_result = f"PAPER_ORDER_EXECUTED: {signal.quantity} qty @ ₹{signal.entry_price:.2f}"
+        is_crypto = "BTC" in signal.symbol.upper() or "ETH" in signal.symbol.upper() or signal.exchange == "DELTA"
+        curr = "$" if is_crypto else "₹"
+        lev_tag = " @ 25x" if is_crypto else ""
+        order_result = f"PAPER_ORDER_EXECUTED: {signal.quantity} qty @ {curr}{signal.entry_price:.2f}{lev_tag}"
         try:
             from api.routes.positions import add_paper_position
             add_paper_position(signal)
@@ -291,11 +307,10 @@ async def handle_approve(
             logger.error("Failed to add paper position: %s", err)
 
     # Update signal status in store
-    signal_store: dict[str, TradeSignal] = context.bot_data.get("signal_store", {})
-    if signal_id in signal_store:
-        signal_store[signal_id] = signal.model_copy(
-            update={"status": SignalStatus.APPROVED}
-        )
+    signal.status = SignalStatus.APPROVED
+    signal_store: dict[str, TradeSignal] = context.bot_data.get("signal_store", {}) if (context and hasattr(context, "bot_data") and context.bot_data) else {}
+    signal_store[signal_id] = signal
+    GLOBAL_SIGNAL_STORE[signal_id] = signal
 
     # Edit original message instantly with final status
     trade_id = escape_md(format_trade_id(signal.id))

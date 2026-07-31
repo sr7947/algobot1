@@ -74,6 +74,54 @@ def add_paper_position(signal: Any) -> Dict[str, Any]:
     return pos
 
 
+@router.post("/create-sample", status_code=status.HTTP_201_CREATED)
+async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Create a live paper/testnet trade position (e.g. BTCUSD or NIFTY) and add to active positions."""
+    payload = body or {}
+    sym = str(payload.get("symbol", "BTCUSD")).upper()
+    is_crypto = "BTC" in sym or "ETH" in sym or "CRYPTO" in str(payload.get("asset_class", "")).upper()
+
+    if is_crypto:
+        pos = {
+            "id": f"btc-{int(time.time())}",
+            "symbol": "BTCUSD",
+            "exchange": "DELTA",
+            "asset_class": "CRYPTO",
+            "expiry": "Perpetual",
+            "direction": str(payload.get("direction", "BUY")),
+            "qty": int(payload.get("qty", 1)),
+            "entry": 65200.00,
+            "current": 65420.00,
+            "pnl": 220.00,
+            "sl": 63500.00,
+            "target": 68600.00,
+            "trailingSl": 65200.00,
+            "time": "Just now",
+            "created_at": time.time(),
+        }
+    else:
+        pos = {
+            "id": f"nifty-{int(time.time())}",
+            "symbol": "NIFTY 24400 CE",
+            "exchange": "NFO",
+            "asset_class": "FNO",
+            "expiry": "04-AUG-2026",
+            "direction": "BUY",
+            "qty": 50,
+            "entry": 145.00,
+            "current": 152.50,
+            "pnl": 375.00,
+            "sl": 101.50,
+            "target": 217.50,
+            "trailingSl": 145.00,
+            "time": "Just now",
+            "created_at": time.time(),
+        }
+
+    ACTIVE_PAPER_POSITIONS.insert(0, pos)
+    return {"status": "success", "message": f"Position placed for {pos['symbol']}", "position": pos}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Pydantic Models
 # ─────────────────────────────────────────────────────────────────────────────

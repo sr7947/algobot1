@@ -126,7 +126,7 @@ def _parse_callback_data(data: str) -> tuple[str, str]:
     return parts[0].strip(), parts[1].strip()
 
 
-GLOBAL_SIGNAL_STORE: dict[str, Any] = {}
+GLOBAL_SIGNAL_STORE: dict[Any, Any] = {}
 
 
 async def _get_signal(
@@ -135,21 +135,30 @@ async def _get_signal(
 ) -> TradeSignal | None:
     """
     Retrieve a signal from the in-memory signal store.
-
-    Returns fallback TradeSignal if not found in memory (ensures Telegram buttons work robustly).
+    Normalizes UUID vs string keys to ensure robust Telegram button execution.
     """
-    signal_store: dict[str, TradeSignal] = context.bot_data.get("signal_store", {}) if (context and hasattr(context, "bot_data") and context.bot_data) else {}
-    if signal_id in signal_store:
-        return signal_store[signal_id]
-    if signal_id in GLOBAL_SIGNAL_STORE:
-        return GLOBAL_SIGNAL_STORE[signal_id]
+    clean_id = str(signal_id).strip().lower()
 
+    # 1. Search in context bot_data
+    if context and hasattr(context, "bot_data") and context.bot_data:
+        signal_store = context.bot_data.get("signal_store", {})
+        if isinstance(signal_store, dict):
+            for k, v in list(signal_store.items()):
+                if str(k).strip().lower() == clean_id:
+                    return v
+
+    # 2. Search in GLOBAL_SIGNAL_STORE
+    for k, v in list(GLOBAL_SIGNAL_STORE.items()):
+        if str(k).strip().lower() == clean_id:
+            return v
+
+    # 3. Fallback reconstruction for UUID signals
     from uuid import UUID
     from datetime import datetime, timezone, timedelta
     from core.models import TradeSignal, MarketRegime, SignalStatus
 
     try:
-        val_uuid = UUID(signal_id)
+        val_uuid = UUID(clean_id)
         fallback_signal = TradeSignal(
             id=val_uuid,
             created_at=datetime.now(timezone.utc),
@@ -171,7 +180,8 @@ async def _get_signal(
             status=SignalStatus.PENDING_APPROVAL.value,
             expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
         )
-        GLOBAL_SIGNAL_STORE[signal_id] = fallback_signal
+        GLOBAL_SIGNAL_STORE[clean_id] = fallback_signal
+        GLOBAL_SIGNAL_STORE[val_uuid] = fallback_signal
         return fallback_signal
     except Exception:
         return None

@@ -69,14 +69,21 @@ class TelegramBot:
 
     def register_signal(self, signal: Any) -> None:
         """Register a signal in the bot's signal_store so button callbacks can look it up."""
-        signal_id = str(signal.id) if hasattr(signal, "id") else str(signal)
-        self._signal_store[signal_id] = signal
+        str_id = str(getattr(signal, "id", signal)).strip().lower()
+        raw_id = getattr(signal, "id", signal)
+
+        self._signal_store[str_id] = signal
+        self._signal_store[raw_id] = signal
+
         from telegram_bot.handlers import GLOBAL_SIGNAL_STORE
-        GLOBAL_SIGNAL_STORE[signal_id] = signal
+        GLOBAL_SIGNAL_STORE[str_id] = signal
+        GLOBAL_SIGNAL_STORE[raw_id] = signal
+
         if self._app and hasattr(self._app, "bot_data"):
             if "signal_store" not in self._app.bot_data:
                 self._app.bot_data["signal_store"] = self._signal_store
-            self._app.bot_data["signal_store"][signal_id] = signal
+            self._app.bot_data["signal_store"][str_id] = signal
+            self._app.bot_data["signal_store"][raw_id] = signal
 
     async def start(self) -> None:
         """Build and start the Telegram bot (polling mode)."""

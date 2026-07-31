@@ -55,6 +55,18 @@ export default function Positions() {
     }
   };
 
+  const handleLoadSeed = async () => {
+    try {
+      const res = await axios.post('/api/v1/positions/load-seed');
+      const n = res.data?.crypto_open ?? res.data?.added ?? 0;
+      toast.success(n ? `Loaded ${n} paper position(s)` : 'No seed positions to load');
+      fetchPositions();
+    } catch (err) {
+      console.error(err);
+      toast.error('Could not load paper positions — is the API running on :8000?');
+    }
+  };
+
   useEffect(() => {
     fetchPositions();
     const interval = setInterval(fetchPositions, 2000);
@@ -82,8 +94,19 @@ export default function Positions() {
           </span>
         </div>
 
-        <div className={`text-2xl font-bold ${totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-          {totalPnl >= 0 ? '+' : ''}{currencySymbol}{totalPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+        <div className="flex items-center gap-3">
+          {isCrypto && (
+            <button
+              type="button"
+              onClick={handleLoadSeed}
+              className="text-xs px-3 py-1.5 rounded-lg border border-purple-500/40 text-purple-300 hover:bg-purple-500/10"
+            >
+              Load Telegram paper fills
+            </button>
+          )}
+          <div className={`text-2xl font-bold ${totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {totalPnl >= 0 ? '+' : ''}{currencySymbol}{totalPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </div>
         </div>
       </div>
 
@@ -112,7 +135,7 @@ export default function Positions() {
                 <tr>
                   <td colSpan={isCrypto ? 13 : 10} className="p-8 text-center text-gray-500 text-xs">
                     {isCrypto
-                      ? 'No active Crypto open positions. Trades on Delta Exchange will appear here in real time.'
+                      ? 'No active Crypto open positions. Telegram paper fills appear when Approve runs on the same machine as this API — or click “Load Telegram paper fills” after git pull.'
                       : 'No active Indian F&O open positions. Approved trades from Telegram will appear here in real time.'}
                   </td>
                 </tr>

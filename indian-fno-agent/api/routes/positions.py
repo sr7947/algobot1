@@ -39,9 +39,41 @@ router = APIRouter(prefix="/positions", tags=["Positions"])
 from api.paper_book import (  # noqa: E402
     ACTIVE_PAPER_POSITIONS,
     add_paper_position,
+    merge_seed,
     reload as reload_paper_positions,
     save_paper_positions,
+    upsert_paper_position_dict,
 )
+
+
+@router.post("/paper", status_code=status.HTTP_201_CREATED)
+async def upsert_paper_position(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Upsert a paper/Telegram fill into the live book (used by same-host sync)."""
+    if not body.get("id"):
+        raise HTTPException(status_code=400, detail="position id is required")
+    if not body.get("asset_class"):
+        sym = str(body.get("symbol", "")).upper()
+        body["asset_class"] = (
+            "CRYPTO" if ("BTC" in sym or "ETH" in sym or body.get("exchange") == "DELTA") else "FNO"
+        )
+    if "created_at" not in body:
+        body["created_at"] = time.time()
+    pos = upsert_paper_position_dict(body)
+    return {"status": "success", "position": pos}
+
+
+@router.post("/load-seed", status_code=status.HTTP_200_OK)
+async def load_seed_paper_positions() -> Dict[str, Any]:
+    """Merge checked-in seed paper fills (e.g. after git pull of an approved Telegram trade)."""
+    added = merge_seed(force=True)
+    reload_paper_positions()
+    crypto = [p for p in ACTIVE_PAPER_POSITIONS if p.get("asset_class") == "CRYPTO"]
+    return {
+        "status": "success",
+        "added": added,
+        "crypto_open": len(crypto),
+        "positions": crypto,
+    }
 
 
 @router.post("/create-sample", status_code=status.HTTP_201_CREATED)

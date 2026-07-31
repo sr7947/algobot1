@@ -208,6 +208,14 @@ class Settings(BaseSettings):
             "before the signal is automatically marked EXPIRED."
         ),
     )
+    PAPER_BOOK_SYNC_URL: str = Field(
+        default="http://127.0.0.1:8000/api/v1/positions/paper",
+        description=(
+            "Optional URL that receives paper fills after Telegram Approve "
+            "(so a separate local API/dashboard process can show Positions). "
+            "Set empty to disable."
+        ),
+    )
 
     # ------------------------------------------------------------------
     # Google Gemini (AI layer)

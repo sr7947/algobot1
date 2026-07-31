@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Routes, Route, NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Zap, Briefcase, History, TestTube, Settings,
-  Activity, Shield, Menu, X, Moon, Sun, Radio,
+  Activity, Shield, Menu, X, Moon, Sun, Radio, Coins, TrendingUp,
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import Signals from './pages/Signals';
@@ -10,6 +10,7 @@ import Positions from './pages/Positions';
 import Trades from './pages/Trades';
 import Backtest from './pages/Backtest';
 import SettingsPage from './pages/Settings';
+import { useAppStore } from './store/useAppStore';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -23,7 +24,9 @@ const navItems = [
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
-  const isConnected = true; // Replace with real WS state
+  const isConnected = true;
+
+  const { assetClass, setAssetClass } = useAppStore();
 
   return (
     <div className={`${darkMode ? 'dark' : ''} min-h-screen bg-navy-900 text-gray-100 flex`}>
@@ -39,7 +42,9 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-wide">F&O Agent</h1>
-            <span className="text-[10px] text-gray-500 uppercase tracking-widest">Trading System</span>
+            <span className="text-[10px] text-gray-500 uppercase tracking-widest">
+              {assetClass === 'CRYPTO' ? 'Crypto Algo System' : 'Indian F&O System'}
+            </span>
           </div>
         </div>
 
@@ -64,11 +69,18 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="absolute bottom-4 left-3 right-3 p-3 glass-card">
-          <div className="flex items-center gap-2 text-xs">
-            <Shield className="w-3.5 h-3.5 text-green-400" />
-            <span className="text-gray-400">Mode:</span>
-            <span className="font-semibold text-yellow-400">PAPER</span>
+        <div className="absolute bottom-4 left-3 right-3 p-3 glass-card space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="flex items-center gap-1.5 text-gray-400">
+              <Shield className="w-3.5 h-3.5 text-emerald-400" />
+              Broker:
+            </span>
+            <span className="font-semibold text-yellow-400">
+              {assetClass === 'CRYPTO' ? 'Delta Testnet' : 'Paper Broker'}
+            </span>
+          </div>
+          <div className="text-[10px] text-gray-500">
+            {assetClass === 'CRYPTO' ? 'Crypto Futures & Options 24/7' : 'NSE / BSE Derivatives'}
           </div>
         </div>
       </aside>
@@ -92,12 +104,43 @@ export default function App() {
                 <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
               </div>
             </div>
+
+            {/* Asset Class Toggle Switch */}
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-800/50 text-xs">
-                <Radio className="w-3 h-3 text-green-400" />
-                <span className="text-gray-400">NSE</span>
-                <span className="text-green-400 font-semibold">Live</span>
+              <div className="flex items-center bg-navy-800 p-1 rounded-xl border border-gray-700/60 shadow-inner">
+                <button
+                  onClick={() => setAssetClass('FNO')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    assetClass === 'FNO'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  <TrendingUp className="w-3.5 h-3.5" /> 🇮🇳 Indian F&O
+                </button>
+                <button
+                  onClick={() => setAssetClass('CRYPTO')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    assetClass === 'CRYPTO'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  <Coins className="w-3.5 h-3.5 text-yellow-400" /> 🪙 Crypto Mode
+                </button>
               </div>
+
+              {/* Status Badge */}
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-800/60 border border-gray-700/50 text-xs">
+                <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
+                <span className="text-gray-400">
+                  {assetClass === 'CRYPTO' ? 'Delta Exch' : 'NSE'}
+                </span>
+                <span className="text-emerald-400 font-semibold">
+                  {assetClass === 'CRYPTO' ? 'Live 24/7' : 'Live'}
+                </span>
+              </div>
+
               <button
                 onClick={() => setDarkMode(!darkMode)}
                 className="p-2 rounded-lg hover:bg-gray-800 text-gray-400"

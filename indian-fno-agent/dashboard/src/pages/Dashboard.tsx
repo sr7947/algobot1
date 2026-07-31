@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { TrendingUp, Briefcase, Zap, Target, Wallet, ShieldCheck, PieChart } from 'lucide-react';
+import { TrendingUp, Briefcase, Zap, Target, Wallet, ShieldCheck, PieChart, Coins } from 'lucide-react';
 import axios from 'axios';
 import PnlChart from '../components/PnlChart';
 import RiskGauge from '../components/RiskGauge';
 import Watchlist from '../components/Watchlist';
+import { useAppStore } from '../store/useAppStore';
 
 interface SignalItem {
   id: string | number;
@@ -16,6 +17,7 @@ interface SignalItem {
 }
 
 export default function Dashboard() {
+  const { assetClass } = useAppStore();
   const [positionsCount, setPositionsCount] = useState<number>(0);
   const [signals] = useState<SignalItem[]>([]);
 
@@ -36,30 +38,48 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const totalCapital = 500000;
-  const usedMargin = positionsCount * 15000; // estimated
+  const isCrypto = assetClass === 'CRYPTO';
+  const currencySymbol = isCrypto ? '$' : '₹';
+
+  const totalCapital = isCrypto ? 100.00 : 500000;
+  const usedMargin = isCrypto ? (positionsCount * 15.00) : (positionsCount * 15000);
   const availableMargin = totalCapital - usedMargin;
 
   const stats = [
-    { label: 'Daily P&L', value: '₹0.00', change: '+0.0%', positive: true, icon: TrendingUp },
+    { label: 'Daily P&L', value: `${currencySymbol}0.00`, change: '+0.0%', positive: true, icon: TrendingUp },
     { label: 'Open Positions', value: `${positionsCount}`, change: 'of 5 max', positive: true, icon: Briefcase },
     { label: 'Win Rate', value: '0%', change: '0 trades today', positive: true, icon: Target },
     { label: 'Signals Today', value: `${signals.length}`, change: '0 pending', positive: true, icon: Zap },
   ];
 
   const systemStatus = [
-    { label: 'Broker', status: 'Paper Connected', ok: true },
+    { label: 'Broker', status: isCrypto ? 'Delta Testnet Connected' : 'Paper Broker Connected', ok: true },
     { label: 'Telegram Bot', status: 'Active (@fno7947_bot)', ok: true },
     { label: 'Kill Switch', status: 'OFF (Safety Active)', ok: true },
-    { label: 'News Feed', status: 'Active (Gemini AI)', ok: true },
+    { label: 'News Feed', status: isCrypto ? 'Active (Crypto Sentiment AI)' : 'Active (Gemini AI)', ok: true },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold">Dashboard</h2>
-        <span className="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full font-medium border border-emerald-500/20">
-          Paper Trading Mode (₹5,00,000 Capital)
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            {isCrypto ? (
+              <span className="flex items-center gap-2 text-purple-400">
+                <Coins className="w-6 h-6 text-yellow-400" /> Crypto Trading Dashboard
+              </span>
+            ) : (
+              <span>🇮🇳 F&O Trading Dashboard</span>
+            )}
+          </h2>
+        </div>
+
+        <span className={`text-xs px-3 py-1 rounded-full font-medium border ${
+          isCrypto
+            ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+            : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+        }`}>
+          {isCrypto ? 'Delta Testnet Crypto Mode ($100.00 USD Balance)' : 'Paper Trading Mode (₹5,00,000 Capital)'}
         </span>
       </div>
 
@@ -71,8 +91,12 @@ export default function Dashboard() {
           </div>
           <div>
             <p className="text-xs text-gray-400">Total Account Balance</p>
-            <p className="text-xl font-bold text-white">₹{totalCapital.toLocaleString('en-IN')}.00</p>
-            <p className="text-[10px] text-gray-500">Starting Paper Capital</p>
+            <p className="text-xl font-bold text-white">
+              {currencySymbol}{totalCapital.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </p>
+            <p className="text-[10px] text-gray-500">
+              {isCrypto ? 'Delta Testnet Wallet (USD)' : 'Starting Paper Capital (INR)'}
+            </p>
           </div>
         </div>
 
@@ -82,7 +106,9 @@ export default function Dashboard() {
           </div>
           <div>
             <p className="text-xs text-gray-400">Available Margin</p>
-            <p className="text-xl font-bold text-emerald-400">₹{availableMargin.toLocaleString('en-IN')}.00</p>
+            <p className="text-xl font-bold text-emerald-400">
+              {currencySymbol}{availableMargin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </p>
             <p className="text-[10px] text-emerald-500/80">100% Free Margin</p>
           </div>
         </div>
@@ -93,7 +119,9 @@ export default function Dashboard() {
           </div>
           <div>
             <p className="text-xs text-gray-400">Used Margin</p>
-            <p className="text-xl font-bold text-purple-400">₹{usedMargin.toLocaleString('en-IN')}.00</p>
+            <p className="text-xl font-bold text-purple-400">
+              {currencySymbol}{usedMargin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </p>
             <p className="text-[10px] text-gray-500">Deployed in Positions</p>
           </div>
         </div>
@@ -120,7 +148,7 @@ export default function Dashboard() {
       {/* Charts + Risk */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 glass-card p-5">
-          <h3 className="text-sm font-semibold text-gray-300 mb-4">Intraday P&L Curve</h3>
+          <h3 className="text-sm font-semibold text-gray-300 mb-4">Intraday P&L Curve ({isCrypto ? 'USD' : 'INR'})</h3>
           <PnlChart />
         </div>
         <div className="glass-card p-5">
@@ -146,7 +174,9 @@ export default function Dashboard() {
               <Zap className="w-8 h-8 mx-auto mb-2 opacity-30 text-blue-400" />
               No signals generated yet today.
               <br />
-              AI strategies are actively scanning NSE charts...
+              {isCrypto
+                ? 'AI strategies are actively scanning Delta Exchange BTC & ETH feeds...'
+                : 'AI strategies are actively scanning NSE charts...'}
             </div>
           ) : (
             <div className="space-y-2">

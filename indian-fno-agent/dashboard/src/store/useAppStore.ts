@@ -38,6 +38,7 @@ interface AppState {
   isConnected: boolean;
   tradingMode: string;
   killSwitchActive: boolean;
+  assetClass: 'FNO' | 'CRYPTO';
   watchlist: string[];
 
   // Actions
@@ -48,6 +49,7 @@ interface AppState {
   setDailyPnl: (pnl: number) => void;
   setConnected: (connected: boolean) => void;
   setMode: (mode: string) => void;
+  setAssetClass: (assetClass: 'FNO' | 'CRYPTO') => void;
   toggleKillSwitch: () => void;
 
   // API calls
@@ -63,6 +65,7 @@ export const useAppStore = create<AppState>((set) => ({
   isConnected: false,
   tradingMode: 'PAPER',
   killSwitchActive: false,
+  assetClass: 'FNO',
   watchlist: ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'RELIANCE', 'HDFCBANK'],
 
   setSignals: (signals) => set({ signals }),
@@ -75,6 +78,7 @@ export const useAppStore = create<AppState>((set) => ({
   setDailyPnl: (dailyPnl) => set({ dailyPnl }),
   setConnected: (isConnected) => set({ isConnected }),
   setMode: (tradingMode) => set({ tradingMode }),
+  setAssetClass: (assetClass) => set({ assetClass }),
   toggleKillSwitch: () => set((s) => ({ killSwitchActive: !s.killSwitchActive })),
 
   fetchSignals: async () => {

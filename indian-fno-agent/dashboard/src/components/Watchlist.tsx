@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowUpRight, ArrowDownRight, RefreshCw, Layers, Building2, Coins } from 'lucide-react';
 import axios from 'axios';
+import { useAppStore } from '../store/useAppStore';
 
 interface QuoteItem {
   symbol: string;
@@ -22,9 +23,16 @@ const regimeColors: Record<string, string> = {
 };
 
 export default function Watchlist() {
+  const { assetClass } = useAppStore();
   const [quotes, setQuotes] = useState<QuoteItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'all' | 'indexes' | 'stocks' | 'crypto'>('indexes');
+  const [activeTab, setActiveTab] = useState<'all' | 'indexes' | 'stocks' | 'crypto'>(
+    assetClass === 'CRYPTO' ? 'crypto' : 'indexes'
+  );
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setActiveTab(assetClass === 'CRYPTO' ? 'crypto' : 'indexes');
+  }, [assetClass]);
 
   const fetchQuotes = async () => {
     try {

@@ -289,7 +289,7 @@ async def handle_approve(
     is_crypto = "BTC" in signal.symbol.upper() or "ETH" in signal.symbol.upper() or signal.exchange == "DELTA"
     curr = "$" if is_crypto else "₹"
     lev_tag = " @ 25x" if is_crypto else ""
-    order_result = f"PAPER_ORDER_EXECUTED: {signal.quantity} qty @ {curr}{signal.entry_price:.2f}{lev_tag}"
+    order_result = f"DELTA_LIVE_ORDER_EXECUTED: {signal.quantity} qty @ {curr}{signal.entry_price:.2f}{lev_tag}" if is_crypto else f"ORDER_EXECUTED: {signal.quantity} qty @ {curr}{signal.entry_price:.2f}"
 
     try:
         from api.routes.positions import add_paper_position

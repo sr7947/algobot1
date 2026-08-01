@@ -294,8 +294,30 @@ async def handle_approve(
     try:
         from api.routes.positions import add_paper_position
         add_paper_position(signal)
+
+        from config.settings import get_settings
+        from broker.base import BrokerFactory
+        from core.models import OrderRequest
+        import asyncio
+
+        st = get_settings()
+        if getattr(st, "BROKER", "paper") == "delta_exchange" or is_crypto:
+            broker = BrokerFactory.create("delta_exchange", st)
+            req = OrderRequest(
+                signal_id=signal.id,
+                symbol=signal.symbol,
+                exchange="NSE",
+                instrument_type="FUT" if is_crypto else "CE",
+                direction=signal.direction,
+                order_type="MARKET",
+                product_type="INTRADAY",
+                quantity=signal.quantity,
+                price=signal.entry_price,
+                broker="delta_exchange"
+            )
+            asyncio.create_task(broker.place_order(req))
     except Exception as err:
-        logger.error("Failed to add paper position: %s", err)
+        logger.error("Failed to add paper position / place broker order: %s", err)
 
     signal.status = SignalStatus.APPROVED
     signal_store: dict[str, TradeSignal] = context.bot_data.get("signal_store", {}) if (context and hasattr(context, "bot_data") and context.bot_data) else {}

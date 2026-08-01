@@ -2,12 +2,17 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# System dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     gcc \
+    g++ \
     libpq-dev \
+    git \
     && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip & build tools
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Python dependencies
 COPY requirements.txt .
@@ -15,11 +20,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source
 COPY . .
-
-# Create non-root user
-RUN useradd -m -u 1000 fnoagent && \
-    chown -R fnoagent:fnoagent /app
-USER fnoagent
 
 # Create runtime directories
 RUN mkdir -p logs data backtests

@@ -58,7 +58,7 @@ class DeltaExchangeBroker(IBrokerAdapter):
 
     broker_name: str = "delta_exchange"
 
-    TESTNET_BASE_URL: str = "https://api.testnet.delta.exchange"
+    TESTNET_BASE_URL: str = "https://cdn-ind.testnet.deltaex.org"
     LIVE_BASE_URL: str = "https://api.india.delta.exchange"
 
     def __init__(self, settings: Any) -> None:

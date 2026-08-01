@@ -415,9 +415,12 @@ class DeltaExchangeBroker(IBrokerAdapter):
         res = await self._request("POST", "/v2/orders", payload=payload, auth_required=True)
         result = res.get("result", {})
 
+        raw_state = str(result.get("state", "OPEN")).upper()
+        order_status = "COMPLETE" if raw_state in ("CLOSED", "FILLED") else raw_state
+
         return OrderResponse(
             broker_order_id=str(result.get("id")),
-            status=result.get("state", "OPEN").upper(),
+            status=order_status,
             message="Order submitted to Delta Exchange",
             timestamp=datetime.now(timezone.utc),
             raw_response=result,

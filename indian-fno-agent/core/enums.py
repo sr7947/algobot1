@@ -88,6 +88,8 @@ class OrderStatus(str, Enum):
     PENDING   = "PENDING"    # Submitted but not yet acknowledged by exchange
     OPEN      = "OPEN"       # Resting in the order book
     COMPLETE  = "COMPLETE"   # Fully filled
+    CLOSED    = "CLOSED"     # Filled and closed by exchange (Delta Exchange)
+    FILLED    = "FILLED"     # Fully filled alternative name
     CANCELLED = "CANCELLED"  # Cancelled by user or system
     REJECTED  = "REJECTED"   # Rejected by broker or exchange
     PARTIAL   = "PARTIAL"    # Partially filled (remainder still in book)

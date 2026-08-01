@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from config.settings import get_settings
@@ -92,7 +92,6 @@ app = FastAPI(
 
 # ── CORS ─────────────────────────────────────────────────────────────
 
-cors_origins = settings.CORS_ORIGINS.split(",") if hasattr(settings, "CORS_ORIGINS") and settings.CORS_ORIGINS else ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -132,12 +131,31 @@ async def health_check(request: Request):
     }
 
 
-# ── Serve Built Vite React Dashboard ──────────────────────────────────
+# ── Dashboard & Static Assets Serving ─────────────────────────────────
 
-dist_path = os.path.join(os.path.dirname(__file__), "..", "dashboard", "dist")
-if os.path.exists(dist_path):
-    app.mount("/", StaticFiles(directory=dist_path, html=True), name="static")
-    logger.info(f"Serving dashboard UI from {dist_path}")
+dist_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dashboard", "dist"))
+assets_path = os.path.join(dist_path, "assets")
+
+if os.path.exists(assets_path):
+    app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+
+@app.get("/")
+async def root():
+    index_file = os.path.join(dist_path, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    return RedirectResponse(url="/docs")
+
+@app.get("/{full_path:path}")
+async def catch_all(full_path: str):
+    # Do not intercept API or docs routes
+    if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("redoc") or full_path.startswith("openapi.json"):
+        return JSONResponse(status_code=404, content={"error": "not_found", "detail": f"Path /{full_path} not found"})
+    
+    index_file = os.path.join(dist_path, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    return RedirectResponse(url="/docs")
 
 
 # ── Exception Handlers ──────────────────────────────────────────────

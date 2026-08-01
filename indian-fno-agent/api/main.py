@@ -114,7 +114,19 @@ app.include_router(ws_router, tags=["WebSocket"])
 
 # ── Health Check ─────────────────────────────────────────────────────
 
-@app.get("/health")
+@app.get("/api/v1/ip")
+async def get_outbound_ip():
+    """Get exact public outbound IP address of this Railway deployment."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get("https://api.ipify.org?format=json")
+            return res.json()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+@app.get("/health", tags=["Health"])
 async def health_check(request: Request):
     """System health check endpoint."""
     broker_connected = False

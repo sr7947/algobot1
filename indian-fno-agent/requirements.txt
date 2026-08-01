@@ -15,8 +15,8 @@ pyotp>=2.9.0
 # Market Data & Indicators
 pandas>=2.0.0
 numpy>=1.24.0
-pandas-ta>=0.3.14b0
 scipy>=1.10.0
+pandas-ta @ git+https://github.com/twopirllc/pandas-ta.git
 
 # Telegram Bot
 python-telegram-bot>=21.0

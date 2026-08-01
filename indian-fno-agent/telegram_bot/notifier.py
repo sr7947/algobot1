@@ -242,7 +242,7 @@ class TelegramNotifier:
             f"{news_line}\n"
             f"\n"
             f"⏰ Valid until: {expiry_esc}\n"
-            f"{'\\=' * 30}"
+            r"\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\="
         )
 
         keyboard = self._trade_card_keyboard(signal_id)

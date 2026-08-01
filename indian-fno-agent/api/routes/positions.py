@@ -413,6 +413,39 @@ async def list_positions_raw(asset_class: Optional[str] = Query(None)) -> Dict[s
         p["time"] = ("Just now" if (now - float(pos.get("created_at", now))) < 60 else f"{int((now - float(pos.get('created_at', now))) // 60)} min")
         updated_positions.append(p)
 
+    # ── Live Sync from Delta Exchange API if BROKER is delta_exchange ──
+    from config.settings import get_settings
+    st = get_settings()
+    if getattr(st, "BROKER", "paper") == "delta_exchange" and (not target_class or target_class == "CRYPTO"):
+        try:
+            from broker.base import BrokerFactory
+            broker = BrokerFactory.create("delta_exchange", st)
+            await broker.get_instruments(Exchange.NSE)
+            live_delta_positions = await broker.get_positions()
+            for lp in live_delta_positions:
+                if not any(p.get("symbol") == lp.symbol for p in updated_positions):
+                    updated_positions.append({
+                        "id": str(lp.id or lp.order_id or "pos-live"),
+                        "symbol": lp.symbol,
+                        "exchange": "DELTA",
+                        "asset_class": "CRYPTO",
+                        "expiry": "Perpetual",
+                        "direction": lp.direction,
+                        "qty": lp.quantity,
+                        "entry": lp.entry_price,
+                        "current": lp.current_price,
+                        "pnl": round(lp.unrealized_pnl, 2),
+                        "sl": lp.stop_loss,
+                        "target": round(lp.entry_price * 1.08, 2),
+                        "trailingSl": lp.entry_price,
+                        "leverage": "25x (25% Margin)",
+                        "market_status": "OPEN 24/7",
+                        "time": "Live Sync",
+                        "created_at": time.time(),
+                    })
+        except Exception as exc:
+            logger.warning("Could not live sync Delta Exchange positions for Vite UI: %s", exc)
+
     return {"status": "success", "market_status": "OPEN" if market_open else "CLOSED", "positions": updated_positions}
 
 

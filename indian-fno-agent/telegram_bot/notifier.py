@@ -222,7 +222,7 @@ class TelegramNotifier:
 
         text = (
             f"🎯 *TRADE PROPOSAL {trade_id}*\n"
-            f"{'\\=' * 30}\n"
+            r"\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=\=" "\n"
             f"📊 *{symbol_esc}* \\| {exchange_esc} \\| {inst_label_esc}\n"
             f"Strategy: {strategy_esc} \\| Version: {version_esc}\n"
             f"Market Regime: {regime_esc}\n"

@@ -315,7 +315,40 @@ async def handle_approve(
                 price=signal.entry_price,
                 broker="delta_exchange"
             )
-            asyncio.create_task(broker.place_order(req))
+
+            async def _execute_and_notify():
+                try:
+                    logger.info("Submitting order to Delta Exchange Testnet for %s...", signal.symbol)
+                    order_res = await broker.place_order(req)
+                    logger.info("Delta Exchange Order Placed Successfully: %s", order_res)
+                    try:
+                        from telegram_bot.notifier import TelegramNotifier
+                        notifier = TelegramNotifier()
+                        await notifier.send_system_alert(
+                            f"✅ *Delta Exchange Order Placed Live*\n"
+                            f"Symbol: `{signal.symbol}`\n"
+                            f"Broker Order ID: `{order_res.broker_order_id}`\n"
+                            f"Status: {order_res.status}",
+                            severity="INFO"
+                        )
+                    except Exception as e:
+                        logger.warning("Could not send Telegram order confirmation: %s", e)
+                except Exception as exc:
+                    logger.error("Delta Exchange Order Execution Error: %s", exc, exc_info=True)
+                    try:
+                        from telegram_bot.notifier import TelegramNotifier
+                        notifier = TelegramNotifier()
+                        await notifier.send_system_alert(
+                            f"🔴 *Delta Exchange Order Failed*\n"
+                            f"Symbol: `{signal.symbol}`\n"
+                            f"Reason: `{exc}`\n\n"
+                            f"⚠️ Please verify your `DELTA_API_KEY` & `DELTA_API_SECRET` in Railway variables.",
+                            severity="ERROR"
+                        )
+                    except Exception as e:
+                        logger.warning("Could not send Telegram order failure alert: %s", e)
+
+            asyncio.create_task(_execute_and_notify())
     except Exception as err:
         logger.error("Failed to add paper position / place broker order: %s", err)
 

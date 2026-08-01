@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from config.settings import get_settings
 from api.routes import signals, positions, trades, risk, admin, market, backtest
@@ -30,8 +32,6 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Indian F&O Trading Agent API...")
 
     # ── Startup ──
-    # In production, initialise asyncpg pool, Redis, broker, etc.
-    # These are stored on app.state for route access.
     app.state.settings = settings
     app.state.db_pool = None      # asyncpg pool placeholder
     app.state.redis = None        # Redis client placeholder
@@ -95,13 +95,13 @@ app = FastAPI(
 cors_origins = settings.CORS_ORIGINS.split(",") if hasattr(settings, "CORS_ORIGINS") and settings.CORS_ORIGINS else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── Routes ───────────────────────────────────────────────────────────
+# ── API Routes ───────────────────────────────────────────────────────
 
 app.include_router(signals.router, prefix="/api/v1", tags=["Signals"])
 app.include_router(positions.router, prefix="/api/v1", tags=["Positions"])
@@ -132,6 +132,14 @@ async def health_check(request: Request):
     }
 
 
+# ── Serve Built Vite React Dashboard ──────────────────────────────────
+
+dist_path = os.path.join(os.path.dirname(__file__), "..", "dashboard", "dist")
+if os.path.exists(dist_path):
+    app.mount("/", StaticFiles(directory=dist_path, html=True), name="static")
+    logger.info(f"Serving dashboard UI from {dist_path}")
+
+
 # ── Exception Handlers ──────────────────────────────────────────────
 
 @app.exception_handler(Exception)
@@ -142,18 +150,6 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={
             "error": "internal_server_error",
             "detail": str(exc),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        },
-    )
-
-
-@app.exception_handler(404)
-async def not_found_handler(request: Request, exc):
-    return JSONResponse(
-        status_code=404,
-        content={
-            "error": "not_found",
-            "detail": f"Path {request.url.path} not found",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         },
     )

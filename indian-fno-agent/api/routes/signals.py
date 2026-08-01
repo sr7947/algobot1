@@ -32,6 +32,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/signals", tags=["Signals"])
 
 
+@router.get("/ip")
+async def get_outbound_ip() -> Dict[str, Any]:
+    """Get exact public outbound IP address of this Railway deployment."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get("https://api.ipify.org?format=json")
+            return res.json()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Pydantic Response / Request Models
 # ─────────────────────────────────────────────────────────────────────────────

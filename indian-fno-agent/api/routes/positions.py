@@ -166,6 +166,15 @@ async def create_sample_position(body: Optional[Dict[str, Any]] = None) -> Dict[
     return {"status": "success", "message": f"Position placed for {pos['symbol']}", "position": pos}
 
 
+@router.post("/clear-all")
+async def clear_all_positions() -> Dict[str, Any]:
+    """Clear all active open paper/testnet positions."""
+    global ACTIVE_PAPER_POSITIONS
+    ACTIVE_PAPER_POSITIONS.clear()
+    save_positions_to_disk()
+    return {"status": "success", "message": "All open positions cleared cleanly."}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Pydantic Models
 # ─────────────────────────────────────────────────────────────────────────────

@@ -373,21 +373,88 @@ async def get_portfolio_summary(
 @router.get("")
 @router.get("/list-raw")
 async def list_positions_raw(asset_class: Optional[str] = Query(None)) -> Dict[str, Any]:
-    """Return raw list of open positions with asset_class filtering (FNO vs CRYPTO)."""
+    """Return raw list of open positions with exact Delta Exchange lot size and 25x leverage calculation."""
     import math
     from api.routes.market import is_nse_market_open
+    from config.settings import get_settings
 
     now = time.time()
     market_open = is_nse_market_open()
-    updated_positions = []
-
+    st = get_settings()
     target_class = asset_class.upper() if asset_class else None
 
+    delta_live_active = (getattr(st, "BROKER", "paper") == "delta_exchange") and (not target_class or target_class == "CRYPTO")
+    live_positions_list = []
+
+    if delta_live_active:
+        try:
+            from broker.base import BrokerFactory
+            broker = BrokerFactory.create("delta_exchange", st)
+            await broker.login()
+            await broker.get_instruments(Exchange.NSE)
+            live_delta_positions = await broker.get_positions()
+
+            for lp in live_delta_positions:
+                sym = str(lp.symbol).upper()
+                # Lot multiplier rules for Delta Exchange:
+                # BTCUSD: 1 Lot = 0.001 BTC
+                # ETHUSD: 1 Lot = 0.01 ETH
+                if "BTC" in sym:
+                    lot_mult = 0.001
+                elif "ETH" in sym:
+                    lot_mult = 0.01
+                else:
+                    lot_mult = 0.01
+
+                entry = float(lp.entry_price or 0.0)
+                current = float(lp.current_price or entry)
+                qty = int(lp.quantity or 1)
+                direction = str(lp.direction or "BUY").upper()
+
+                # Calculate P&L (USD) & ROE % with 25x leverage
+                if direction == "BUY":
+                    pnl_calc = (current - entry) * qty * lot_mult
+                else:
+                    pnl_calc = (entry - current) * qty * lot_mult
+
+                pnl = round(float(lp.unrealized_pnl) if lp.unrealized_pnl != 0 else pnl_calc, 2)
+                initial_margin = (entry * lot_mult * qty) / 25.0
+                pnl_pct = round((pnl / initial_margin * 100), 2) if initial_margin > 0 else 0.0
+
+                live_positions_list.append({
+                    "id": str(lp.id or lp.order_id or f"delta-{sym}"),
+                    "symbol": sym,
+                    "exchange": "DELTA",
+                    "asset_class": "CRYPTO",
+                    "expiry": "Perpetual",
+                    "direction": direction,
+                    "qty": qty,
+                    "entry": round(entry, 2),
+                    "current": round(current, 2),
+                    "pnl": pnl,
+                    "pnl_pct": pnl_pct,
+                    "sl": round(lp.stop_loss or (entry * 0.95), 2),
+                    "target": round(lp.target or (entry * 1.08), 2),
+                    "trailingSl": round(entry, 2),
+                    "leverage": "25x (25% Margin)",
+                    "market_status": "OPEN 24/7",
+                    "time": "Live Delta Sync",
+                    "created_at": now,
+                })
+        except Exception as exc:
+            logger.warning("Could not live sync Delta Exchange positions for Vite UI: %s", exc)
+
+    # Combine paper/mock positions for FNO (or fallback if live sync empty)
+    updated_positions = list(live_positions_list)
     for pos in ACTIVE_PAPER_POSITIONS:
         sym = pos.get("symbol", "").upper()
         pos_class = pos.get("asset_class", "CRYPTO" if ("BTC" in sym or "ETH" in sym or pos.get("exchange") == "DELTA") else "FNO")
 
         if target_class and pos_class != target_class:
+            continue
+
+        # If live delta positions exist for CRYPTO, skip old paper/mock crypto duplicates
+        if live_positions_list and pos_class == "CRYPTO":
             continue
 
         entry = float(pos.get("entry", 145.0))
@@ -399,11 +466,10 @@ async def list_positions_raw(asset_class: Optional[str] = Query(None)) -> Dict[s
             current_price = round(max(5.0, entry + fluctuated_diff), 2)
             pos["frozen_price"] = current_price
         else:
-            # Market is closed (after 3:30 PM IST) — freeze at 3:30 PM closing level
             current_price = float(pos.get("frozen_price", pos.get("current", entry)))
 
-        multiplier = 0.001 if pos_class == "CRYPTO" else 1.0
-        pnl = round((current_price - entry) * qty * multiplier, 2)
+        lot_m = 0.001 if "BTC" in sym else (0.01 if "ETH" in sym else 1.0)
+        pnl = round((current_price - entry) * qty * lot_m, 2)
         p = dict(pos)
         p["asset_class"] = pos_class
         p["leverage"] = "25x (25% Margin)" if pos_class == "CRYPTO" else "1x"
@@ -412,40 +478,6 @@ async def list_positions_raw(asset_class: Optional[str] = Query(None)) -> Dict[s
         p["market_status"] = "OPEN 24/7" if pos_class == "CRYPTO" else ("OPEN" if market_open else "CLOSED")
         p["time"] = ("Just now" if (now - float(pos.get("created_at", now))) < 60 else f"{int((now - float(pos.get('created_at', now))) // 60)} min")
         updated_positions.append(p)
-
-    # ── Live Sync from Delta Exchange API if BROKER is delta_exchange ──
-    from config.settings import get_settings
-    st = get_settings()
-    if getattr(st, "BROKER", "paper") == "delta_exchange" and (not target_class or target_class == "CRYPTO"):
-        try:
-            from broker.base import BrokerFactory
-            broker = BrokerFactory.create("delta_exchange", st)
-            await broker.login()
-            await broker.get_instruments(Exchange.NSE)
-            live_delta_positions = await broker.get_positions()
-            for lp in live_delta_positions:
-                if not any(p.get("symbol") == lp.symbol for p in updated_positions):
-                    updated_positions.append({
-                        "id": str(lp.id or lp.order_id or "pos-live"),
-                        "symbol": lp.symbol,
-                        "exchange": "DELTA",
-                        "asset_class": "CRYPTO",
-                        "expiry": "Perpetual",
-                        "direction": lp.direction,
-                        "qty": lp.quantity,
-                        "entry": lp.entry_price,
-                        "current": lp.current_price,
-                        "pnl": round(lp.unrealized_pnl, 2),
-                        "sl": lp.stop_loss,
-                        "target": round(lp.entry_price * 1.08, 2),
-                        "trailingSl": lp.entry_price,
-                        "leverage": "25x (25% Margin)",
-                        "market_status": "OPEN 24/7",
-                        "time": "Live Sync",
-                        "created_at": time.time(),
-                    })
-        except Exception as exc:
-            logger.warning("Could not live sync Delta Exchange positions for Vite UI: %s", exc)
 
     return {"status": "success", "market_status": "OPEN" if market_open else "CLOSED", "positions": updated_positions}
 

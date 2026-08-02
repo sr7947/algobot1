@@ -391,7 +391,6 @@ async def list_positions_raw(asset_class: Optional[str] = Query(None)) -> Dict[s
             from broker.base import BrokerFactory
             broker = BrokerFactory.create("delta_exchange", st)
             await broker.login()
-            await broker.get_instruments(Exchange.NSE)
             live_delta_positions = await broker.get_positions()
 
             for lp in live_delta_positions:

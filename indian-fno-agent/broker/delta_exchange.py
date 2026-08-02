@@ -482,7 +482,14 @@ class DeltaExchangeBroker(IBrokerAdapter):
             mark = float(p.get("mark_price", entry))
             pnl = float(p.get("unrealized_pnl", 0.0))
             prod_id = p.get("product_id")
-            sym = self._symbol_map.get(prod_id, f"PRODUCT_{prod_id}")
+            sym = p.get("product", {}).get("symbol") or p.get("product_symbol") or self._symbol_map.get(prod_id)
+            if not sym:
+                if str(prod_id) == "84" or prod_id == 84:
+                    sym = "BTCUSD"
+                elif str(prod_id) == "1699" or prod_id == 1699:
+                    sym = "ETHUSD"
+                else:
+                    sym = f"PRODUCT_{prod_id}"
 
             pos = Position(
                 id=p.get("id"),

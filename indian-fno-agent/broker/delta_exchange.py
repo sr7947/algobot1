@@ -385,8 +385,13 @@ class DeltaExchangeBroker(IBrokerAdapter):
         """
         prod_id = getattr(order, "product_id", None) or self._product_id_map.get(order.symbol)
         if not prod_id:
-            await self.get_instruments(Exchange.NSE)
-            prod_id = self._product_id_map.get(order.symbol)
+            if order.symbol == "BTCUSD":
+                prod_id = 84
+            elif order.symbol == "ETHUSD":
+                prod_id = 1699
+            else:
+                await self.get_instruments(Exchange.NSE)
+                prod_id = self._product_id_map.get(order.symbol)
 
         if not prod_id:
             raise OrderPlacementError(f"Unknown symbol / product_id for {order.symbol}", order_request=order)

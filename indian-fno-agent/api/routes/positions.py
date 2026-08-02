@@ -370,6 +370,26 @@ async def get_portfolio_summary(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+@router.get("/debug-sync")
+async def debug_positions_sync():
+    """Diagnostic endpoint to inspect live Delta Exchange position syncing."""
+    from config.settings import get_settings
+    st = get_settings()
+    output = {"broker": getattr(st, "BROKER", "paper"), "env": getattr(st, "DELTA_ENV", "paper")}
+    try:
+        from broker.base import BrokerFactory
+        broker = BrokerFactory.create("delta_exchange", st)
+        login_res = await broker.login()
+        output["login_success"] = login_res
+        positions = await broker.get_positions()
+        output["positions_count"] = len(positions)
+        output["positions"] = [p.model_dump() for p in positions]
+    except Exception as exc:
+        output["error"] = str(exc)
+        output["error_type"] = type(exc).__name__
+    return output
+
+
 @router.get("")
 @router.get("/list-raw")
 async def list_positions_raw(asset_class: Optional[str] = Query(None)) -> Dict[str, Any]:
